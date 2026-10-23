@@ -39,4 +39,4 @@ jobs:
           GCLOUD_PROJECT: demo-bluewatch-ci
           GOOGLE_CLOUD_PROJECT: demo-bluewatch-ci
           CI: 'true'
-        run: npx --yes firebase-tools@15.9.0 emulators:exec --project demo-bluewatch-ci --only firestore,auth "node --test tests/integration/*.test.js"
+        run: npx --yes firebase-tools@15.9.0 emulators:exec --project demo-bluewatch-ci --only firestore,auth "timeout 240s node --test --test-force-exit tests/integration/*.test.js"
