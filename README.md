@@ -4,14 +4,14 @@ Node.js 20+ / JavaScript ES modules / Express 4 / Cloud Firestore / Firebase Aut
 
 **Scientific boundary:** The API accepts only device-reported **raw seawater** UV-fluorescence spectral measurements and advisory Random Forest classes (`NORMAL`, `PETROLEUM`, `INTERFERENCE`, `INCONCLUSIVE`). Coconut-husk/charcoal treatment is separate. No after-filter sensors, GPS, oil ppm estimates, or filter-removal percentages are implemented.
 
-**Important release disclaimer:** This source package has passed the bundled dependency-free domain tests and Node syntax checks, but full dependency installation, Firebase emulator/integration suites, Vercel build, and real device/notification smoke tests were not executable from its authoring environment. Do not mark the Phase 1 checklist accepted or deploy to live production until those gates pass.
+**Current validation:** GitHub Actions runs `npm ci`, Node syntax tests, unit tests, and isolated Firestore/Auth emulator integration checks. These checks exercise development behavior only; they do **not** replace live Firebase indexes, production credentials, Android/FCM delivery or actual buoy acceptance. See [Phase 1 validation and deployment gates](docs/PHASE1_VALIDATION_AND_DEPLOYMENT.md).
 
 ## Quick start (Windows PowerShell)
 
 Install Node.js 22 LTS and npm first. In the extracted `api` folder:
 
 ```powershell
-npm install
+npm ci
 Copy-Item .env.example .env
 notepad .env
 npm run dev
@@ -49,7 +49,7 @@ Measurements are immutable under `devices/{deviceId}/measurements/{measurementId
 ## Deployment and release caveats
 
 - `vercel.json` defaults to two **daily** cron tasks to avoid rejecting a Vercel Hobby deployment. This does **not** satisfy a 60-minute offline-monitoring SLA; for production use a Pro plan with `docs/vercel-pro-crons.json` cadence or an approved external scheduler with authenticated requests. See current Vercel cron limits.
-- `npm install` will generate a lockfile if registry access is available. This source archive has **no verified lockfile**, because dependencies could not be resolved in the authoring environment. Run `npm install`, commit the resulting lockfile, and change CI to `npm ci` after verifying it.
+- The repository includes a committed `package-lock.json`. Use `npm ci` for reproducible local and CI installations. CI also runs the Firebase emulator suite without accessing live project data.
 - In-memory `express-rate-limit` is per serverless instance, so use a shared external limiter for strong production rate-limit guarantees.
 - Firestore page reads, token processing, offline sweeps, Pusher/FCM duplicate-dispatch semantics and index coverage require load/integration verification. Historical measurements must not be used as scientific proof of oil contamination.
 - Swagger currently documents the route catalogue, but detailed request and response schemas are incomplete. Treat OpenAPI coverage as **not accepted** until expanded.
