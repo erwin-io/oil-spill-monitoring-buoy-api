@@ -22,20 +22,30 @@ async function sendRealtime(job){if(process.env.PUSHER_ENABLED!=='true')return;
  await p.trigger(channel,job.type,job.payload);
 }
 async function dispatchOne(db,messaging,ref){let job;const lease=new Date(Date.now()+90000).toISOString();
- await db.runTransaction(async tx=>{const d=await tx.get(ref);if(!d.exists)return;const v=d.data();if(v.status==='SENT'||v.status==='FAILED'||v.nextAttemptAt>iso()||v.status==='CLAIMED'&&v.leaseUntil>iso())return;job=v;tx.update(ref,{status:'CLAIMED',leaseUntil:lease,attempts:v.attempts+1})});if(!job)return false;
+ await db.runTransaction(async tx=>{const d=await tx.get(ref);if(!d.exists)return;const v=d.data();
+  if(v.status==='SENT'||v.status==='FAILED'||(v.nextAttemptAt&&v.nextAttemptAt>iso())||(v.status==='CLAIMED'&&v.leaseUntil>iso()))return;
+  job={...v,attempts:(v.attempts??0)+1};
+  tx.update(ref,{status:'CLAIMED',leaseUntil:lease,attempts:job.attempts});
+ });if(!job)return false;
  try{await sendRealtime(job);if(job.type==='alert.created'&&process.env.FCM_ENABLED==='true')await pushAlert(db,messaging,job);await ref.update({status:'SENT',sentAt:iso(),leaseUntil:null});}
- catch(e){const permanent=job.attempts>=5;await ref.update({status:permanent?'FAILED':'PENDING',lastError:String(e.code??'DELIVERY_FAILED').slice(0,90),nextAttemptAt:new Date(Date.now()+retryDelay(job.attempts+1)).toISOString(),leaseUntil:null});}
+ catch(e){const permanent=job.attempts>=5;await ref.update({status:permanent?'FAILED':'PENDING',lastError:String(e.code??'DELIVERY_FAILED').slice(0,90),nextAttemptAt:new Date(Date.now()+retryDelay(job.attempts)).toISOString(),leaseUntil:null});}
  return true;
 }
 export async function dispatch(req,res){requireJobAuth(req);const {db,messaging}=firebase();const limit=Math.min(50,Math.max(1,Number(process.env.MAX_WORKER_JOBS)||20));
- const candidates=(await db.collection('notificationOutbox').where('status','==','PENDING').limit(limit).get()).docs;
- const recovered=(await db.collection('notificationOutbox').where('status','==','CLAIMED').limit(limit).get()).docs.filter(d=>d.data().leaseUntil<iso());
+ const cutoff=iso();
+ const candidates=(await db.collection('notificationOutbox').where('status','==','PENDING').where('nextAttemptAt','<=',cutoff).orderBy('nextAttemptAt','asc').limit(limit).get()).docs;
+ const recovered=(await db.collection('notificationOutbox').where('status','==','CLAIMED').where('leaseUntil','<=',cutoff).orderBy('leaseUntil','asc').limit(limit).get()).docs;
  let handled=0;for(const d of [...candidates,...recovered].slice(0,limit)){if(await dispatchOne(db,messaging,d.ref))handled++};res.json({processed:handled,scanned:candidates.length+recovered.length});
 }
 export async function offlineSweep(req,res){requireJobAuth(req);const db=firebase().db;const age=(Number(process.env.OFFLINE_MINUTES)||60)*60000;const devices=(await db.collection('devices').where('status','==','ACTIVE').limit(1000).get()).docs;let marked=0,recovered=0;
  for(const doc of devices){const last=doc.data().lastSeenAt??doc.data().registeredAt;const offline=!!last&&new Date(last).getTime()<Date.now()-age;const ref=db.collection('alerts').doc(alertKey('OFFLINE',doc.id,'ACTIVE'));
-  await db.runTransaction(async tx=>{const existing=await tx.get(ref);if(offline&&!existing.exists){tx.create(ref,{deviceId:doc.id,type:'OFFLINE',severity:'HIGH',status:'OPEN',createdAt:iso()});tx.create(db.collection('notificationOutbox').doc(alertKey('alert.created',doc.id,ref.id)),{type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null});marked++}
-   else if(offline&&existing.exists&&existing.data().status==='RESOLVED'){tx.update(ref,{status:'OPEN',createdAt:iso(),resolvedAt:null});marked++}
+  await db.runTransaction(async tx=>{const existing=await tx.get(ref);if(offline&&!existing.exists){tx.create(ref,{deviceId:doc.id,type:'OFFLINE',severity:'HIGH',status:'OPEN',createdAt:iso(),episode:0});tx.create(db.collection('notificationOutbox').doc(alertKey('alert.created',doc.id,ref.id)),{type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null});marked++}
+   else if(offline&&existing.exists&&existing.data().status==='RESOLVED'){
+    const episode=(existing.data().episode??0)+1;
+    tx.update(ref,{status:'OPEN',createdAt:iso(),resolvedAt:null,episode});
+    tx.create(db.collection('notificationOutbox').doc(alertKey('alert.created',doc.id,ref.id+'_'+episode)),{type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null});
+    marked++;
+   }
    else if(!offline&&existing.exists&&['OPEN','ACKNOWLEDGED'].includes(existing.data().status)){tx.update(ref,{status:'RESOLVED',resolvedAt:iso()});recovered++}
   });
  }res.json({checked:devices.length,newOffline:marked,recovered});

@@ -1,7 +1,29 @@
 {
-  "name":"oil-spill-monitoring-buoy-api","version":"0.1.0","private":true,"type":"module",
-  "engines":{"node":">=20"},
-  "scripts":{"start":"node src/server.js","dev":"nodemon src/server.js","test":"node --test tests/*.test.js","check":"node --check src/app.js && node --check src/handlers.js && node --check src/jobs.js"},
-  "dependencies":{"cors":"^2.8.5","dotenv":"^16.4.5","express":"^4.21.2","express-rate-limit":"^7.5.0","firebase-admin":"^13.0.0","helmet":"^8.0.0","pusher":"^5.2.0","swagger-ui-express":"^5.0.1","zod":"^3.24.2"},
-  "devDependencies":{"nodemon":"^3.1.9"}
+  "name": "oil-spill-monitoring-buoy-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/app.js && node --check src/handlers.js && node --check src/jobs.js && node --check src/domain.js && node --check src/schemas.js && node --check src/security.js && node --check src/firebase.js && node --check src/swagger.js && node --check src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "firebase-admin": "^13.0.0",
+    "helmet": "^8.0.0",
+    "pusher": "^5.2.0",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
 }
