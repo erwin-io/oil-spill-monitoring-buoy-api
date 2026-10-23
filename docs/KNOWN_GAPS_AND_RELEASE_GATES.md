@@ -28,8 +28,8 @@ test counts.
 |---|---|
 | Unit / syntax CI | Required. Check HEAD Actions runs; not equal to live smoke |
 | Firebase Auth/Firestore emulator | Required. Check emulator CI job; indexes are not validated by emulator |
-| Firestore composite indexes on cloud | **PENDING OPERATOR**: deploy `firestore.indexes.json` and confirm Ready |
-| Public/staging HTTPS API | **PENDING OPERATOR**: Vercel project deploy and /health plus bearer smoke |
+| Firestore composite indexes on cloud | **VERIFIED 2026-10-24**: owner deployed the index config; Firebase Console screenshot shows all 3 composite indexes Enabled |
+| Public/staging HTTPS API | **PARTIAL LIVE PASS 2026-10-24**: Android Firebase bearer bootstrap and authenticated scheduler calls reached Vercel HTTPS API; full buoy/alert/config live smoke remains pending |
 | Firebase Admin key + Pusher + device pepper | **ROTATION REQUIRED**: exposed in uploaded export files |
 | Android FCM and actual Pusher event | **PENDING OPERATOR**: secrets, registered Android installation, device smoke |
 | Reliable production offline/delivery scheduler | **DECISION REQUIRED**: Vercel Hobby cron daily; GitHub Actions is best effort |
@@ -49,3 +49,8 @@ test counts.
 milestone, NOT approval for unsupervised production operation.
 
 See `docs/PHASE1_VALIDATION_AND_DEPLOYMENT.md` for commands and secret names.
+
+### Live checklist and full Tech Lead handoff
+
+- [Authoritative 103-item development checklist](https://docs.google.com/spreadsheets/d/1u7q7yetXcge09qaLFywK7s6wSRKjLJcKP-R6pi8t1pQ/edit): 13 Completed / 25 In Progress / 65 Not Started as audited 2026-10-24.
+- [Full next-agent handoff](TECH_LEAD_AGENT_HANDOFF_2026-10-24.md): evidence, API/mobile test baseline, real-device observations and ordered remaining gates.
