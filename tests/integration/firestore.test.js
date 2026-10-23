@@ -38,7 +38,8 @@ test('Firestore: immutable measurement replay and conflicting measurement IDs',a
 
 test('Firestore: stale queued measurement cannot overwrite latest projection',async()=>{
  const id=device();await seedDevice(id);
- const later='2026-10-24T03:00:00.000Z', earlier='2026-10-24T02:00:00.000Z';
+ const later=new Date(Date.now()-60_000).toISOString();
+ const earlier=new Date(Date.now()-120_000).toISOString();
  await ingestMeasurement({deviceId:id,body:measure('latest_sample',later)},response());
  await ingestMeasurement({deviceId:id,body:measure('queued_sample',earlier)},response());
  const doc=await db.collection('devices').doc(id).get();
