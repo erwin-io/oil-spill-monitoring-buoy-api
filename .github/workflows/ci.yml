@@ -1,7 +1,7 @@
 name: API validation
 on:
   push:
-    branches: [main, "fix/**"]
+    branches: [main, "fix/**", "feat/**"]
   pull_request:
     branches: [main]
 permissions:
@@ -15,6 +15,28 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - run: npm run check
       - run: npm test
+
+  firestore-emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --no-audit --no-fund
+      - name: Firestore emulator transactional integration
+        env:
+          FIREBASE_PROJECT_ID: demo-bluewatch-ci
+          GCLOUD_PROJECT: demo-bluewatch-ci
+          GOOGLE_CLOUD_PROJECT: demo-bluewatch-ci
+          CI: 'true'
+        run: npx --yes firebase-tools@15.9.0 emulators:exec --project demo-bluewatch-ci --only firestore "node --test tests/integration/*.test.js"

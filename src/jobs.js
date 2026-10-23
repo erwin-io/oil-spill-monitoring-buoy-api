@@ -9,7 +9,7 @@ function requireJobAuth(req){const secret=process.env.CRON_SECRET;const presente
  * They cannot guarantee exactly-once delivery across a process crash between
  * the FCM send and the receipt write.
  */
-async function pushAlert(db,messaging,job,ref){
+export async function pushAlert(db,messaging,job,ref){
  const alert=await db.collection('alerts').doc(job.payload.alertId).get();
  if(!alert.exists)return;
  const userCache=new Map();
