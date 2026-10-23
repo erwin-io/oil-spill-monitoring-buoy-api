@@ -15,3 +15,17 @@ export function alertKey(kind,deviceId,source){return `${kind}_${deviceId}_${sou
 export function configNext(current,version,patch){if(!Number.isInteger(version)||version!==(current?.configVersion??1))throw httpError('CONFIG_CONFLICT',409);return {...current,...patch,configVersion:version+1}}
 export function retryDelay(attempt){return Math.min(3600000,Math.pow(2,attempt)*15000)}
 export function authorizedChannels(user){const channels=[`private-user-${user.uid}`];if(user.role==='ADMIN')channels.push('private-fleet-all');for(const d of user.allowedDeviceIds??[])channels.push(`private-device-${d}`);return channels}
+
+/** Diagnostic conditions accepted from current firmware and the legacy telemetry contract.
+ * A single health event can report more than one simultaneous fault.
+ */
+export function healthAlerts(health, lowBatteryThreshold = CONFIG_DEFAULT.lowBatteryThreshold) {
+ const issues=[];
+ if(health.batteryPercent!==undefined && health.batteryPercent<lowBatteryThreshold)
+  issues.push({type:'LOW_BATTERY',severity:'WARNING'});
+ if(['FAULT','FAILED'].includes(health.sensor))
+  issues.push({type:'SENSOR_FAULT',severity:'HIGH'});
+ if(health.cellStatus==='MAINTENANCE_REQUIRED')
+  issues.push({type:'CELL_MAINTENANCE_REQUIRED',severity:'HIGH'});
+ return issues;
+}
