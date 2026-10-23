@@ -2,19 +2,58 @@ import {firebase} from './firebase.js';
 import {canRead,retryDelay,alertKey,httpError} from './domain.js';
 const iso=()=>new Date().toISOString();
 function requireJobAuth(req){const secret=process.env.CRON_SECRET;const presented=req.get('authorization');if(!secret||secret.length<24||presented!==`Bearer ${secret}`)throw httpError('JOB_UNAUTHORIZED',401)}
-async function pushAlert(db,messaging,job){
- const alert=await db.collection('alerts').doc(job.payload.alertId).get();if(!alert.exists)return;
- const users=(await db.collection('users').where('status','==','ACTIVE').limit(500).get()).docs;
- const eligible=new Set(users.filter(d=>canRead({...d.data(),uid:d.id},job.deviceId)).map(d=>d.id));
- if(!eligible.size)return;
- const tokens=(await db.collection('notificationTokens').where('active','==',true).limit(1000).get()).docs.filter(d=>eligible.has(d.data().uid));
- for(let i=0;i<tokens.length;i+=500){const group=tokens.slice(i,i+500);if(!group.length)continue;
-  const result=await messaging.sendEachForMulticast({tokens:group.map(t=>t.data().token),notification:{title:'BlueWatch alert',body:`${alert.data().type} on ${job.deviceId}`},data:{alertId:alert.id,deviceId:job.deviceId,type:alert.data().type}});
-  for(let j=0;j<result.responses.length;j++){const entry=result.responses[j];const code=entry.error?.code;
-   if(!entry.success&&['messaging/invalid-registration-token','messaging/registration-token-not-registered'].includes(code))await group[j].ref.update({active:false,updatedAt:iso()});
-   else if(!entry.success)throw entry.error;
+/**
+ * Paginate tokens instead of truncating notifications at the first 1,000.
+ * Scope EVERY recipient against their current ACTIVE profile. FCM receipts
+ * prevent repeating already-confirmed deliveries on ordinary job retries.
+ * They cannot guarantee exactly-once delivery across a process crash between
+ * the FCM send and the receipt write.
+ */
+async function pushAlert(db,messaging,job,ref){
+ const alert=await db.collection('alerts').doc(job.payload.alertId).get();
+ if(!alert.exists)return;
+ const userCache=new Map();
+ let cursor=null;
+ let firstFailure=null;
+ do {
+  let query=db.collection('notificationTokens').where('active','==',true).limit(250);
+  if(cursor)query=query.startAfter(cursor);
+  const page=await query.get();
+  if(page.empty)break;
+  const eligible=[];
+  for(const token of page.docs){
+   const value=token.data(), uid=value.uid;
+   if(typeof uid!=='string'||!value.token)continue;
+   if(!userCache.has(uid)){
+    const user=await db.collection('users').doc(uid).get();
+    userCache.set(uid,user.exists?{...user.data(),uid}:null);
+   }
+   const user=userCache.get(uid);
+   if(!user||user.status!=='ACTIVE'||!canRead(user,job.deviceId))continue;
+   const receipt=ref.collection('fcmReceipts').doc(token.id);
+   if((await receipt.get()).exists)continue;
+   eligible.push({token,receipt});
   }
- }
+  if(eligible.length){
+   const result=await messaging.sendEachForMulticast({
+    tokens:eligible.map(x=>x.token.data().token),
+    notification:{title:'BlueWatch alert',body:`${alert.data().type} on ${job.deviceId}`},
+    data:{alertId:alert.id,deviceId:job.deviceId,type:alert.data().type},
+   });
+   for(let i=0;i<eligible.length;i++){
+    const entry=result.responses[i], {token,receipt}=eligible[i];
+    if(entry.success){
+     await receipt.set({status:'SENT',sentAt:iso()});
+    }else if(['messaging/invalid-registration-token','messaging/registration-token-not-registered'].includes(entry.error?.code)){
+     await token.ref.update({active:false,updatedAt:iso()});
+     await receipt.set({status:'INVALID_TOKEN',checkedAt:iso()});
+    }else firstFailure??=entry.error??new Error('FCM_DELIVERY_FAILED');
+   }
+  }
+  cursor=page.docs.at(-1);
+  if(page.size<250)break;
+ }while(cursor);
+ if(firstFailure)throw firstFailure;
 }
 async function sendRealtime(job){if(process.env.PUSHER_ENABLED!=='true')return;
  const {default:Pusher}=await import('pusher');const p=new Pusher({appId:process.env.PUSHER_APP_ID,key:process.env.PUSHER_KEY,secret:process.env.PUSHER_SECRET,cluster:process.env.PUSHER_CLUSTER});
@@ -27,7 +66,15 @@ async function dispatchOne(db,messaging,ref){let job;const lease=new Date(Date.n
   job={...v,attempts:(v.attempts??0)+1};
   tx.update(ref,{status:'CLAIMED',leaseUntil:lease,attempts:job.attempts});
  });if(!job)return false;
- try{await sendRealtime(job);if(job.type==='alert.created'&&process.env.FCM_ENABLED==='true')await pushAlert(db,messaging,job);await ref.update({status:'SENT',sentAt:iso(),leaseUntil:null});}
+ try{
+  if(!job.realtimeDelivered){
+   await sendRealtime(job);
+   // Best-effort Pusher checkpoint: duplicates remain possible in the crash window.
+   await ref.update({realtimeDelivered:true});
+  }
+  if(job.type==='alert.created'&&process.env.FCM_ENABLED==='true')await pushAlert(db,messaging,job,ref);
+  await ref.update({status:'SENT',sentAt:iso(),leaseUntil:null});
+ }
  catch(e){const permanent=job.attempts>=5;await ref.update({status:permanent?'FAILED':'PENDING',lastError:String(e.code??'DELIVERY_FAILED').slice(0,90),nextAttemptAt:new Date(Date.now()+retryDelay(job.attempts)).toISOString(),leaseUntil:null});}
  return true;
 }
