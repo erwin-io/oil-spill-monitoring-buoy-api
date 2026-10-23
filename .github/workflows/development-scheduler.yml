@@ -1,0 +1,37 @@
+name: BlueWatch development scheduler
+
+# GitHub Actions can be delayed and is not a guaranteed production SLA.
+# Disabled until BLUEWATCH_SCHEDULER_ENABLED=true and both repository secrets are set.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bluewatch-dev-scheduler
+  cancel-in-progress: false
+jobs:
+  tick:
+    if: vars.BLUEWATCH_SCHEDULER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BLUEWATCH_API_BASE_URL: ${{ secrets.BLUEWATCH_API_BASE_URL }}
+      BLUEWATCH_CRON_SECRET: ${{ secrets.BLUEWATCH_CRON_SECRET }}
+    steps:
+      - name: Verify scheduler is configured
+        run: |
+          test -n "$BLUEWATCH_API_BASE_URL"
+          test -n "$BLUEWATCH_CRON_SECRET"
+          case "$BLUEWATCH_API_BASE_URL" in https://*) ;; *) echo 'HTTPS API origin required' >&2; exit 1;; esac
+      - name: Detect offline devices
+        run: |
+          curl --fail-with-body --show-error --silent --max-time 60 --retry 2 \
+            --header "Authorization: Bearer $BLUEWATCH_CRON_SECRET" \
+            "$BLUEWATCH_API_BASE_URL/api/v1/jobs/offline"
+      - name: Dispatch queued notifications
+        run: |
+          curl --fail-with-body --show-error --silent --max-time 60 --retry 2 \
+            --header "Authorization: Bearer $BLUEWATCH_CRON_SECRET" \
+            "$BLUEWATCH_API_BASE_URL/api/v1/jobs/dispatch"

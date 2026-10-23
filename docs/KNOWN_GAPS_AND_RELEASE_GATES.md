@@ -1,38 +1,51 @@
-# October 23, 2026 — phase 1 release gate report
+# BlueWatch API — Phase 1 release gates (updated 2026-10-24)
 
-## Actual local evidence
+This status supersedes the October 23 packaging-only report. Review the
+**current GitHub Actions results on the exact candidate commit**, not historical
+test counts.
 
-- API syntax check via `npm run check`: PASS (Node `--check` for app, handlers, jobs)
-- Backend pure/helper and Swagger tests: **9 passed / 0 failed** at the last recorded execution
-- Mobile package architecture tests: **4 passed / 0 failed**
-- Zip archive integrity: PASS, as recorded at packaging
-- Dependencies fetched/installed in authoring environment: **NOT RUN** (network DNS unavailable)
-- Express runtime tests: **NOT RUN**
-- Firestore emulator and Firebase Admin integration: **NOT RUN**
-- Angular production build, TypeScript compiler against dependencies, Ionic CLI serve: **NOT RUN**
-- Vercel deployment, Pusher, FCM, native Android and live HTTPS smoke: **NOT RUN**
-- GitHub changes committed: **NO**. GitHub was read-only audited; both target repositories contained README, `.gitignore`, LICENSE only at reviewed HEADs.
+## Implemented development controls
+- Reproducible `package-lock.json` and `npm ci` in CI.
+- Node syntax checking and unit tests for domain, validation and OpenAPI catalogue.
+- Isolated `demo-bluewatch-ci` Firebase Authentication and Firestore emulator
+  HTTP/integration tests. No live credentials are needed or used.
+- Immutable raw-seawater measurements, payload conflict detection and stale
+  latest-record protection.
+- Allowed-device scopes, verified email and role-gated account requests.
+- Atomic buoy status / device-credential updates, key rotation and optimistic
+  config changes.
+- Historical firmware telemetry compatibility: calibration/config metadata,
+  diagnostics, queue depth, sensor FAULT/FAILED, and configured battery thresholds.
+- Per-episode petroleum / health / maintenance / offline alarms.
+- Recipient-scoped paginated FCM outbox delivery with acknowledged token receipts
+  for ordinary retries; transient errors still retry.
+- Opt-in **development** scheduler workflow for free-tier hosting that cannot
+  run frequent native cron jobs.
 
-## Release blockers
+## Tests that STILL require external resources or authorized operator action
 
-1. Generate reproducible `package-lock.json` files using npm registry access, commit them, switch Actions to `npm ci`, and run complete CI on exact new commits.
-2. Expand backend request/error/response OpenAPI schemas and contract tests beyond route catalogue.
-3. Add Firestore emulator integration tests for concurrent ingest, immutable idempotency/conflicts, stale latest-state protection and atomic outbox writes.
-4. Add user-provider tests including Google and password signup/verified-email/disabled/revoked sessions; add multi-user role/scope boundary tests.
-5. Prove notification outbox worker retry, transient token delivery, unique per-recipient delivery and crash/restart semantics; current best-effort worker may repeat delivery after partial send failures.
-6. Test Firestore recipient scoping at scale. Current outbox worker bounds users to 500 and active tokens to 1000; this is not yet scalable fleet-wide notification delivery.
-7. Improve serverless rate-limiting to shared persistent limiter rather than per-instance in-memory counters.
-8. Run Vercel staging deployment and choose a scheduler capable of meeting the configured 60-minute offline detection requirement; Hobby daily Cron cannot meet it.
-9. Finish UI features: comprehensive chart time-range selection, separate recent alert counts, complete pagination/filters, polished offline UX and comprehensive component tests.
-10. Generate and compile Capacitor Android source, configure FCM and Google native OAuth, test actual notification taps with owner.
-11. Configure Firebase development project and staging API/FCM/Pusher credentials supplied by owner through secret stores.
-12. Push source to both repositories using a trusted local Git client or approved repository-authoring environment, review via PRs and verify GitHub Actions on exact commits.
+| Gate | State / evidence |
+|---|---|
+| Unit / syntax CI | Required. Check HEAD Actions runs; not equal to live smoke |
+| Firebase Auth/Firestore emulator | Required. Check emulator CI job; indexes are not validated by emulator |
+| Firestore composite indexes on cloud | **PENDING OPERATOR**: deploy `firestore.indexes.json` and confirm Ready |
+| Public/staging HTTPS API | **PENDING OPERATOR**: Vercel project deploy and /health plus bearer smoke |
+| Firebase Admin key + Pusher + device pepper | **ROTATION REQUIRED**: exposed in uploaded export files |
+| Android FCM and actual Pusher event | **PENDING OPERATOR**: secrets, registered Android installation, device smoke |
+| Reliable production offline/delivery scheduler | **DECISION REQUIRED**: Vercel Hobby cron daily; GitHub Actions is best effort |
+| Rate limiting and high-volume fleet paging | **NOT ACCEPTED**: local-only rate limiter and API listing caps |
+| Exactly-once push delivery | **NOT GUARANTEED**: FCM may duplicate after crash between send and receipt |
+| Concurrent load / cloud-index verification | **PENDING STAGING**: emulator does not enforce production index & limits |
 
-## Security policies
+## Security / scientific invariants
+- NEVER commit `.env`, service-account JSON, or any secret from exported code.
+- User roles cannot be self-elevated through `/auth/bootstrap`; first ADMIN is
+  operator-provisioned through a secure trusted procedure.
+- Classifications are advisory oil-sensitive fluorescence signatures.
+- Raw seawater sampling only: no post-filter readings, map/GPS, ppm or fabricated
+  filter removal effectiveness.
 
-- Do not upload `FIREBASE_PRIVATE_KEY`, service account files, Pusher secret, cron secret or device key into public repository or mobile source.
-- The first administrator must be explicitly provisioned by an authorized operator, never through self-supplied role during bootstrap.
-- The device's PETROLEUM class and Random Forest confidence are advisory; no compliance or concentration claims.
-- No GPS, map, remote OTA, post-filter measurements or filter performance percentage.
+**Interpretation:** Merging a passing candidate into `main` is a development
+milestone, NOT approval for unsupervised production operation.
 
-**Status: Development source prepared; Phase 1 not accepted for production.**
+See `docs/PHASE1_VALIDATION_AND_DEPLOYMENT.md` for commands and secret names.
