@@ -8,6 +8,8 @@ if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_H
    !process.env.FIREBASE_PROJECT_ID?.startsWith('demo-')){
  throw new Error('HTTP integration tests MUST target both emulators on demo- project');
 }
+// The demo emulator uses synthetic credentials only; NEVER copy this to live .env.
+process.env.DEVICE_KEY_PEPPER='EMULATOR_ONLY_NOT_A_REAL_SECRET_2026_BLUEWATCH_0123456789';
 const {auth,db}=firebase();
 async function signIn(email,password){
  const response=await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=test-api-key`,{
