@@ -1,0 +1,32 @@
+|-- .env
+|-- .env.example
+|-- .gitignore
+|-- api
+    |-- index.js
+|-- docs
+    |-- BlueWatch_Postman_Collection.json
+    |-- FIREBASE_WINDOWS_SETUP.md
+    |-- KNOWN_GAPS_AND_RELEASE_GATES.md
+    |-- local-validation.log
+    |-- vercel-pro-crons.json
+|-- firebase.json
+|-- firestore.indexes.json
+|-- firestore.rules
+|-- LICENSE
+|-- package-lock.json
+|-- package.json
+|-- README.md
+|-- src
+    |-- app.js
+    |-- domain.js
+    |-- firebase.js
+    |-- handlers.js
+    |-- jobs.js
+    |-- schemas.js
+    |-- security.js
+    |-- server.js
+    |-- swagger.js
+|-- tests
+    |-- domain.test.js
+    |-- swagger.test.js
+|-- vercel.json

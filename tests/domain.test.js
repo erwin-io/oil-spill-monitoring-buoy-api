@@ -1,0 +1,10 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {keyHash,keysEqual,makeKey,latestWins,configNext,canRead,retryDelay,alertKey,authorizedChannels} from '../src/domain.js';
+const pepper='this-is-long-enough-to-be-a-secure-test-pepper';
+test('per device keys are random and hashed securely',()=>{const a=makeKey(),b=makeKey();assert.notEqual(a,b);assert.ok(keysEqual(keyHash(a,pepper),keyHash(a,pepper)));assert.equal(keysEqual(keyHash(a,pepper),keyHash(b,pepper)),false)});
+test('admin has all access, viewer needs explicit scope',()=>{assert.equal(canRead({role:'VIEWER',allowedDeviceIds:['B1']},'B2'),false);assert.equal(canRead({role:'ADMIN'},'B2'),true)});
+test('latest projection rejects older queued measurements',()=>{assert.equal(latestWins({lastMeasurementAt:'2026-10-23T12:00:00Z'},'2026-10-22T12:00:00Z'),false)});
+test('config optimistic version conflict',()=>{assert.throws(()=>configNext({configVersion:4},3,{}),{code:'CONFIG_CONFLICT'});assert.equal(configNext({configVersion:4},4,{samplingIntervalMinutes:20}).configVersion,5)});
+test('backoff is bounded',()=>{assert.ok(retryDelay(100)<=3600000)});
+test('event identifiers are stable and sanitized',()=>{assert.equal(alertKey('A','B','x/x'),alertKey('A','B','x/x'))});
+test('non admin has no fleet channel',()=>{assert.deepEqual(authorizedChannels({uid:'u',role:'VIEWER',allowedDeviceIds:['B1']}),['private-user-u','private-device-B1'])});

@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  // All operational data goes through the authenticated Node API.
+  // Firebase Admin SDK bypasses rules; backend MUST independently authorize every request.
+  match /{document=**} { allow read, write: if false; }
+ }
+}
