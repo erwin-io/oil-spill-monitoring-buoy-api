@@ -18,8 +18,13 @@ async function signIn(email,password){
  assert.equal(response.status,200,JSON.stringify(value));
  return value.idToken;
 }
-function server(){
+async function server(){
  const listener=app.listen(0,'127.0.0.1');
+ await new Promise((resolve,reject)=>{
+  if(listener.listening)return resolve();
+  listener.once('listening',resolve);
+  listener.once('error',reject);
+ });
  return {
   url:`http://127.0.0.1:${listener.address().port}`,
   close:()=>new Promise((resolve,reject)=>listener.close(err=>err?reject(err):resolve())),
@@ -33,7 +38,7 @@ async function get(url,token){
 test('Firebase auth emulator: unverified, verified, scoped, disabled and admin HTTP gates',async()=>{
  const id=randomUUID().slice(0,12),email=`bluewatch_${id}@example.test`,password='Strong-Test-Password-123!';
  const user=await auth.createUser({email,password,emailVerified:false});
- const live=server();
+ const live=await server();
  try{
   const anonymous=await get(`${live.url}/api/v1/devices`);
   assert.equal(anonymous.code,401);
@@ -80,7 +85,7 @@ test('Firebase emulators: registered buoy keys, disable/re-enable, rotation and 
  await db.collection('users').doc(user.uid).set({
   email,role:'ADMIN',status:'ACTIVE',displayName:'Test administrator',allowedDeviceIds:[],
  });
- const token=await signIn(email,password), buoyId='buoy_'+key, live=server();
+ const token=await signIn(email,password), buoyId='buoy_'+key, live=await server();
  const api=async(method,path,body,headers={})=>{
   const r=await fetch(`${live.url}${path}`,{
    method,
