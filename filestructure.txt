@@ -8,7 +8,7 @@
 |-- api
     |-- index.js
 |-- docs
-    |-- BlueWatch_Postman_Collection.json
+    |-- Oil_Spill_Monitoring_Buoy_Postman_Collection.json
     |-- FIREBASE_WINDOWS_SETUP.md
     |-- KNOWN_GAPS_AND_RELEASE_GATES.md
     |-- local-validation.log

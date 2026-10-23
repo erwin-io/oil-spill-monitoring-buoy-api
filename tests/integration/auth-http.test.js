@@ -9,7 +9,7 @@ if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_H
  throw new Error('HTTP integration tests MUST target both emulators on demo- project');
 }
 // The demo emulator uses synthetic credentials only; NEVER copy this to live .env.
-process.env.DEVICE_KEY_PEPPER='EMULATOR_ONLY_NOT_A_REAL_SECRET_2026_BLUEWATCH_0123456789';
+process.env.DEVICE_KEY_PEPPER='EMULATOR_ONLY_NOT_A_REAL_SECRET_2026_OIL_SPILL_0123456789';
 const {auth,db}=firebase();
 async function signIn(email,password){
  const response=await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=test-api-key`,{
@@ -38,7 +38,7 @@ async function get(url,token){
 }
 
 test('Firebase auth emulator: unverified, verified, scoped, disabled and admin HTTP gates',async()=>{
- const id=randomUUID().slice(0,12),email=`bluewatch_${id}@example.test`,password='Strong-Test-Password-123!';
+ const id=randomUUID().slice(0,12),email=`oil_spill_${id}@example.test`,password='Strong-Test-Password-123!';
  const user=await auth.createUser({email,password,emailVerified:false});
  const live=await server();
  try{
