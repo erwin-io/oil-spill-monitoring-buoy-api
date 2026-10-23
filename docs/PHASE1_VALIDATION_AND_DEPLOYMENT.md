@@ -11,7 +11,7 @@ There is **no** after-filter water telemetry and no GPS/ppm claims.
 ## Automated validation without project credentials
 The GitHub API CI contains two independent jobs:
 - `test` runs locked dependencies, Node syntax checks and unit/contract tests.
-- `firestore-emulator` installs Java 21 and Firebase CLI, starts **Firestore emulator**
+- `firestore-emulator` installs Java 21 and Firebase CLI, starts **Firestore and Firebase Auth emulators**
   using isolated `demo-bluewatch-ci`, and runs `tests/integration/firestore.test.js`.
   Tests verify immutable measurements, conflicting replays, stale projections,
   diagnostic alerts, scoped FCM delivery receipts and repeated offline episodes.
@@ -60,5 +60,5 @@ npm test
 # Requires Java 21 and the Firebase CLI, does NOT access production:
 $env:FIREBASE_PROJECT_ID='demo-bluewatch-ci'
 $env:GCLOUD_PROJECT='demo-bluewatch-ci'
-npx firebase-tools@15.9.0 emulators:exec --project demo-bluewatch-ci --only firestore "node --test tests/integration/*.test.js"
+npx firebase-tools@15.9.0 emulators:exec --project demo-bluewatch-ci --only firestore,auth "node --test tests/integration/*.test.js"
 ```
