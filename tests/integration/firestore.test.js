@@ -57,9 +57,9 @@ test('Firestore: health replay digest, diagnostics and configured threshold',asy
  assert.equal(replay.payload.receivedAt,one.payload.receivedAt);
  await assert.rejects(ingestHealth({deviceId:id,body:{...body,batteryPercent:23}},response()),{code:'HEALTH_CONFLICT',status:409});
  for(const type of ['LOW_BATTERY','SENSOR_FAULT']){
-  const alert=await db.collection('alerts').doc(alertKey(type,id,body.healthId)).get();
+  const alert=await db.collection('alerts').doc(alertKey(type,id,'ACTIVE')).get();
   assert.equal(alert.exists,true,`${type} should be recorded atomically`);
-  const intent=await db.collection('notificationOutbox').doc(alertKey('alert.created',id,alert.id)).get();
+  const intent=await db.collection('notificationOutbox').doc(alertKey('alert.created',id,alert.id+'_0')).get();
   assert.equal(intent.exists,true);
  }
 });
@@ -108,4 +108,48 @@ test('Firestore: offline recovery and recurring outage generate distinct deliver
  assert.equal((await alertRef.get()).data().episode,1);
  const next=await db.collection('notificationOutbox').doc(alertKey('alert.created',id,alertId+'_1')).get();
  assert.equal(next.exists,true);
+});
+
+test('Firestore: repeated health faults do not spam and recovery permits new episode',async()=>{
+ const id=device();await seedDevice(id);
+ const start=new Date(Date.now()-6000).getTime();
+ const upload=async(n,battery,sensor)=>ingestHealth({deviceId:id,body:{
+  healthId:'status_'+n,measuredAt:new Date(start+n*1000).toISOString(),batteryPercent:battery,sensor,
+ }},response());
+ const ref=db.collection('alerts').doc(alertKey('LOW_BATTERY',id,'ACTIVE'));
+ await upload(1,10,'OK');
+ assert.equal((await ref.get()).data().status,'OPEN');
+ assert.equal((await ref.get()).data().episode,0);
+ await upload(2,11,'OK');
+ assert.equal((await ref.get()).data().episode,0);
+ await upload(3,80,'OK');
+ assert.equal((await ref.get()).data().status,'RESOLVED');
+ await upload(4,7,'OK');
+ assert.equal((await ref.get()).data().status,'OPEN');
+ assert.equal((await ref.get()).data().episode,1);
+ const first=await db.collection('notificationOutbox').doc(alertKey('alert.created',id,ref.id+'_0')).get();
+ const repeated=await db.collection('notificationOutbox').doc(alertKey('alert.created',id,ref.id+'_1')).get();
+ assert.equal(first.exists,true);
+ assert.equal(repeated.exists,true);
+ const created=(await db.collection('notificationOutbox').where('deviceId','==',id).get()).docs
+  .filter(x=>x.data().type==='alert.created');
+ assert.equal(created.length,2,'two fault episodes, not three notifications');
+});
+
+test('Firestore: reopened petroleum alarm gets new outbox ID and FCM receipts',async()=>{
+ const id=device();await seedDevice(id);
+ const start=Date.now()-5000;
+ const data=(key,delta,classification)=>({...measure(key,new Date(start+delta).toISOString()),classification,confidence:.93});
+ await ingestMeasurement({deviceId:id,body:data('petroleum_1',1000,'PETROLEUM')},response());
+ await ingestMeasurement({deviceId:id,body:data('normal_1',2000,'NORMAL')},response());
+ await ingestMeasurement({deviceId:id,body:data('petroleum_2',3000,'PETROLEUM')},response());
+ const active=db.collection('alerts').doc(alertKey('PETROLEUM',id,'ACTIVE'));
+ const state=await active.get();
+ assert.equal(state.data().status,'OPEN');
+ assert.equal(state.data().episode,1);
+ for(const episode of [0,1]){
+  const job=await db.collection('notificationOutbox')
+   .doc(alertKey('alert.created',id,active.id+'_'+episode)).get();
+  assert.equal(job.exists,true,'petroleum episode '+episode+' must have independent receipts');
+ }
 });
