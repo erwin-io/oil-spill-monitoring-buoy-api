@@ -1,5 +1,9 @@
 |-- .env
 |-- .env.example
+|-- .env.prod
+|-- .github
+    |-- workflows
+        |-- ci.yml
 |-- .gitignore
 |-- api
     |-- index.js
@@ -8,6 +12,7 @@
     |-- FIREBASE_WINDOWS_SETUP.md
     |-- KNOWN_GAPS_AND_RELEASE_GATES.md
     |-- local-validation.log
+    |-- OLD_NEW_MERGE_REVIEW.md
     |-- vercel-pro-crons.json
 |-- firebase.json
 |-- firestore.indexes.json
@@ -28,5 +33,6 @@
     |-- swagger.js
 |-- tests
     |-- domain.test.js
+    |-- merge-hardening.test.js
     |-- swagger.test.js
 |-- vercel.json
