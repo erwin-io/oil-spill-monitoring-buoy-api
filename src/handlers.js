@@ -75,7 +75,10 @@ export async function ingestMeasurement(req,res){const m=validate(measurement,re
  const ref=db.collection('devices').doc(devId),sample=ref.collection('measurements').doc(m.measurementId);let replay=false;
  await db.runTransaction(async tx=>{
   const activeOil=db.collection('alerts').doc(alertKey('PETROLEUM',devId,'ACTIVE'));
-  const [existing,dev,conf,oilAlert]=await Promise.all([tx.get(sample),tx.get(ref),tx.get(ref.collection('config').doc('current')),tx.get(activeOil)]);
+  const maintenanceRef=db.collection('alerts').doc(alertKey('MEASUREMENT_CELL_MAINTENANCE',devId,'ACTIVE'));
+  const [existing,dev,conf,oilAlert,maintenanceAlert]=await Promise.all([
+   tx.get(sample),tx.get(ref),tx.get(ref.collection('config').doc('current')),tx.get(activeOil),tx.get(maintenanceRef)
+  ]);
   if(existing.exists){const x=existing.data();if(x.payloadDigest!==digest(m))throw httpError('MEASUREMENT_CONFLICT',409);replay=true;return}
   if(!dev.exists||dev.data().status!=='ACTIVE')throw httpError('DEVICE_DISABLED',403);
   tx.create(sample,{...m,deviceId:devId,receivedAt:now(),payloadDigest:digest(m),source:'RAW_SEAWATER'});
@@ -83,15 +86,23 @@ export async function ingestMeasurement(req,res){const m=validate(measurement,re
   else tx.update(ref,{lastSeenAt:now()});
   const threshold=conf.exists?(conf.data().oilConfidenceThreshold??CONFIG_DEFAULT.oilConfidenceThreshold):CONFIG_DEFAULT.oilConfidenceThreshold;
   if(latestWins(dev.data(),m.measuredAt)&&m.classification==='PETROLEUM'&&m.confidence>=threshold&&(!oilAlert.exists||oilAlert.data().status==='RESOLVED')){
-   const alert={deviceId:devId,measurementId:m.measurementId,type:'PETROLEUM',severity:'CRITICAL',status:'OPEN',createdAt:now(),resolvedAt:null};
+   const episode=oilAlert.exists?(oilAlert.data().episode??0)+1:0;
+   const alert={deviceId:devId,measurementId:m.measurementId,type:'PETROLEUM',severity:'CRITICAL',status:'OPEN',createdAt:now(),resolvedAt:null,episode};
    if(oilAlert.exists)tx.update(activeOil,alert);else tx.create(activeOil,alert);
-   enqueue(tx,db,'alert.created',devId,activeOil.id,{alertId:activeOil.id,deviceId:devId,type:'PETROLEUM',severity:'CRITICAL'});
+   // Unique delivery job on each recurrence, while preserving the stable active alert ID.
+   enqueue(tx,db,'alert.created',devId,activeOil.id+'_'+episode,{alertId:activeOil.id,deviceId:devId,type:'PETROLEUM',severity:'CRITICAL'});
   }else if(m.classification==='NORMAL'&&oilAlert.exists&&['OPEN','ACKNOWLEDGED'].includes(oilAlert.data().status)&&latestWins(dev.data(),m.measuredAt)){tx.update(activeOil,{status:'RESOLVED',resolvedAt:now()})}
-  // Restore legacy CELL_MAINTENANCE_REQUIRED detection from measurement telemetry.
-  if(m.cellStatus==='MAINTENANCE_REQUIRED'){
-   const alertId=alertKey('CELL_MAINTENANCE_REQUIRED',devId,m.measurementId);
-   tx.create(db.collection('alerts').doc(alertId),{deviceId:devId,measurementId:m.measurementId,type:'CELL_MAINTENANCE_REQUIRED',severity:'HIGH',status:'OPEN',createdAt:now()});
-   enqueue(tx,db,'alert.created',devId,alertId,{alertId,deviceId:devId,type:'CELL_MAINTENANCE_REQUIRED',severity:'HIGH'});
+  // Dedicated maintenance episodes for measurement telemetry are handled only for latest data.
+  if(latestWins(dev.data(),m.measuredAt)&&m.cellStatus!==undefined){
+   const maintenance=maintenanceAlert;
+   if(m.cellStatus==='MAINTENANCE_REQUIRED'&&(!maintenance.exists||maintenance.data().status==='RESOLVED')){
+    const episode=maintenance.exists?(maintenance.data().episode??0)+1:0;
+    const value={deviceId:devId,measurementId:m.measurementId,type:'CELL_MAINTENANCE_REQUIRED',severity:'HIGH',status:'OPEN',createdAt:now(),resolvedAt:null,episode};
+    if(maintenance.exists)tx.update(maintenanceRef,value);else tx.create(maintenanceRef,value);
+    enqueue(tx,db,'alert.created',devId,maintenanceRef.id+'_'+episode,{alertId:maintenanceRef.id,deviceId:devId,type:'CELL_MAINTENANCE_REQUIRED',severity:'HIGH'});
+   }else if(m.cellStatus!=='MAINTENANCE_REQUIRED'&&maintenance.exists&&['OPEN','ACKNOWLEDGED'].includes(maintenance.data().status)){
+    tx.update(maintenanceRef,{status:'RESOLVED',resolvedAt:now()});
+   }
   }
   enqueue(tx,db,'measurement.created',devId,m.measurementId,{deviceId:devId,measurementId:m.measurementId,classification:m.classification,confidence:m.confidence});
  });const stored=await sample.get();res.status(replay?200:201).json({accepted:true,duplicate:replay,deviceId:devId,measurementId:m.measurementId,receivedAt:stored.data()?.receivedAt});
@@ -107,15 +118,35 @@ export async function ingestHealth(req,res){
    replay=true;return;
   }
   if(!dev.exists||dev.data().status!=='ACTIVE')throw httpError('DEVICE_DISABLED',403);
-  tx.create(ref,{...h,deviceId:req.deviceId,receivedAt:now(),payloadDigest});
-  if(!dev.data().lastHealthAt||latestWins({lastMeasurementAt:dev.data().lastHealthAt},h.measuredAt)){
-   tx.update(d,{lastSeenAt:now(),lastHealthAt:h.measuredAt,batteryPercent:h.batteryPercent??dev.data().batteryPercent??null,signalStrengthDbm:h.signalStrengthDbm??dev.data().signalStrengthDbm??null,cellStatus:h.cellStatus??dev.data().cellStatus??null});
-  }else tx.update(d,{lastSeenAt:now()});
+  const latestHealth=!dev.data().lastHealthAt||
+   latestWins({lastMeasurementAt:dev.data().lastHealthAt},h.measuredAt);
   const threshold=conf.exists?conf.data().lowBatteryThreshold??CONFIG_DEFAULT.lowBatteryThreshold:CONFIG_DEFAULT.lowBatteryThreshold;
-  for(const issue of healthAlerts(h,threshold)){
-   const alertId=alertKey(issue.type,req.deviceId,h.healthId);
-   tx.create(db.collection('alerts').doc(alertId),{deviceId:req.deviceId,healthId:h.healthId,type:issue.type,severity:issue.severity,status:'OPEN',createdAt:now()});
-   enqueue(tx,db,'alert.created',req.deviceId,alertId,{deviceId:req.deviceId,alertId,type:issue.type,severity:issue.severity});
+  const issues=healthAlerts(h,threshold);
+  const observed=[
+   ...(h.batteryPercent!==undefined?['LOW_BATTERY']:[]),
+   ...(h.sensor!==undefined?['SENSOR_FAULT']:[]),
+   ...(h.cellStatus!==undefined?['CELL_MAINTENANCE_REQUIRED']:[]),
+  ];
+  // Read active states before any transaction writes (Firestore transaction requirement).
+  const refs=observed.map(type=>db.collection('alerts').doc(alertKey(type,req.deviceId,'ACTIVE')));
+  const states=latestHealth?await Promise.all(refs.map(ref=>tx.get(ref))):[];
+  tx.create(ref,{...h,deviceId:req.deviceId,receivedAt:now(),payloadDigest});
+  if(latestHealth){
+   tx.update(d,{lastSeenAt:now(),lastHealthAt:h.measuredAt,batteryPercent:h.batteryPercent??dev.data().batteryPercent??null,signalStrengthDbm:h.signalStrengthDbm??dev.data().signalStrengthDbm??null,cellStatus:h.cellStatus??dev.data().cellStatus??null});
+   for(let i=0;i<observed.length;i++){
+    const type=observed[i],alertRef=refs[i],current=states[i],issue=issues.find(x=>x.type===type);
+    if(issue&&(!current.exists||current.data().status==='RESOLVED')){
+     const episode=current.exists?(current.data().episode??0)+1:0;
+     const payload={deviceId:req.deviceId,healthId:h.healthId,type,severity:issue.severity,status:'OPEN',createdAt:now(),resolvedAt:null,episode};
+     if(current.exists)tx.update(alertRef,payload);else tx.create(alertRef,payload);
+     enqueue(tx,db,'alert.created',req.deviceId,alertRef.id+'_'+episode,{deviceId:req.deviceId,alertId:alertRef.id,type,severity:issue.severity});
+    }else if(!issue&&current.exists&&['OPEN','ACKNOWLEDGED'].includes(current.data().status)){
+     tx.update(alertRef,{status:'RESOLVED',resolvedAt:now()});
+    }
+   }
+  }else{
+   // Preserve historical telemetry but never create current alerts from stale uploads.
+   tx.update(d,{lastSeenAt:now()});
   }
   enqueue(tx,db,'health.updated',req.deviceId,h.healthId,{deviceId:req.deviceId,healthId:h.healthId});
  });
