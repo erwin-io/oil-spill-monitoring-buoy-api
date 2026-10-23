@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "BlueWatch Phase1 API \u2014 STAGING ONLY",
+    "name": "Oil Spill Monitoring Buoy Phase1 API \u2014 STAGING ONLY",
     "description": "Contains illustrative synthetic test payloads only. Never upload to science production records. Replace placeholders and current device timestamps.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },

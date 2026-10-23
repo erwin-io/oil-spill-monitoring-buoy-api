@@ -1,5 +1,5 @@
 export default {
- openapi:'3.0.3',info:{title:'BlueWatch Oil Spill Monitoring Buoys API',version:'0.1.0',description:'Raw-seawater UV fluorescence telemetry is advisory, not certified oil concentration.'},
+ openapi:'3.0.3',info:{title:'Oil Spill Monitoring Buoy API',version:'0.1.0',description:'Raw-seawater UV fluorescence telemetry is advisory, not certified oil concentration.'},
  servers:[{url:'/'}],components:{securitySchemes:{firebaseAuth:{type:'http',scheme:'bearer',bearerFormat:'Firebase ID token'},deviceKey:{type:'apiKey',in:'header',name:'X-Device-Key'},deviceId:{type:'apiKey',in:'header',name:'X-Device-ID'}}},
  paths:[
   ['get','/health','Health'],['post','/api/v1/auth/bootstrap','First-login provisioning'],['get','/api/v1/auth/me','My profile'],

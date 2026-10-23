@@ -1,4 +1,4 @@
-# BlueWatch — Oil Spill Monitoring Buoys API (Phase 1 working source)
+# Oil Spill Monitoring Buoy API (Phase 1 working source)
 
 Node.js 20+ / JavaScript ES modules / Express 4 / Cloud Firestore / Firebase Auth / Pusher Channels / FCM / Vercel.
 

@@ -1,4 +1,4 @@
-# BlueWatch API: Phase 1 validation and deployment checkpoints
+# Oil Spill Monitoring Buoy API: Phase 1 validation and deployment checkpoints
 
 Updated 2026-10-24. This separates validated development code from production-dependent acceptance.
 
@@ -12,7 +12,7 @@ There is **no** after-filter water telemetry and no GPS/ppm claims.
 The GitHub API CI contains two independent jobs:
 - `test` runs locked dependencies, Node syntax checks and unit/contract tests.
 - `firestore-emulator` installs Java 21 and Firebase CLI, starts **Firestore and Firebase Auth emulators**
-  using isolated `demo-bluewatch-ci`, and runs `tests/integration/firestore.test.js`.
+  using isolated `demo-oil-spill-monitoring-buoy-ci`, and runs `tests/integration/*.test.js`.
   Tests verify immutable measurements, conflicting replays, stale projections,
   diagnostic alerts, scoped FCM delivery receipts and repeated offline episodes.
 
@@ -37,9 +37,9 @@ indexes, transaction contention and limits must still be staged.
    scoped listeners, retry after error and token revocation.
 5. **Scheduler:** Vercel Hobby native cron supports daily intervals only. For
    low-cost development, use `.github/workflows/development-scheduler.yml`.
-   Set repository secrets `BLUEWATCH_API_BASE_URL` (HTTPS **origin only**, no slash)
-   and `BLUEWATCH_CRON_SECRET` equal to the Vercel `CRON_SECRET`.
-   Then enable repo variable `BLUEWATCH_SCHEDULER_ENABLED=true`.
+   Set repository secrets `OIL_SPILL_API_BASE_URL` (HTTPS **origin only**, no slash)
+   and `OIL_SPILL_CRON_SECRET` equal to the Vercel `CRON_SECRET`.
+   Then enable repo variable `OIL_SPILL_SCHEDULER_ENABLED=true`.
    Keep disabled until indexes, credentials and staging data are prepared.
    GitHub Actions schedules may start late or be dropped and are **not suitable
    for contractual 60-minute detection/delivery guarantees**.
@@ -58,7 +58,7 @@ npm run check
 npm test
 
 # Requires Java 21 and the Firebase CLI, does NOT access production:
-$env:FIREBASE_PROJECT_ID='demo-bluewatch-ci'
-$env:GCLOUD_PROJECT='demo-bluewatch-ci'
-npx firebase-tools@15.9.0 emulators:exec --project demo-bluewatch-ci --only firestore,auth "node --test tests/integration/*.test.js"
+$env:FIREBASE_PROJECT_ID='demo-oil-spill-monitoring-buoy-ci'
+$env:GCLOUD_PROJECT='demo-oil-spill-monitoring-buoy-ci'
+npx firebase-tools@15.9.0 emulators:exec --project demo-oil-spill-monitoring-buoy-ci --only firestore,auth "node --test tests/integration/*.test.js"
 ```

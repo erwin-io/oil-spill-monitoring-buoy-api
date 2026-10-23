@@ -4,18 +4,18 @@
 
 1. Download/install Node.js **22 LTS** from https://nodejs.org/ ; open a new PowerShell window.
 2. Check `node --version` and `npm --version`.
-3. Extract `BlueWatch_API_Phase1.zip`; open PowerShell in its `api` folder.
+3. Clone `https://github.com/erwin-io/oil-spill-monitoring-buoy-api` and open PowerShell in the repository root.
 4. Run `npm install` once, with internet access.
 
 ## 2. Create a Firebase development project
 
 1. Open https://console.firebase.google.com/ and select **Add project**.
-2. Enter an identifiable development name, e.g. `bluewatch-dev`. Choose your own project ID; do not use the sample in production.
+2. Enter an identifiable development name, e.g. `oil-spill-monitoring-buoy-dev`. Choose your own project ID; do not use the sample in production.
 3. Open **Build → Firestore Database → Create database**. Select a region close to your devices/users. Select production/security mode; this API uses Admin SDK only. Confirm billing eligibility for the chosen region/features.
 4. Open **Build → Authentication → Get started → Sign-in method**. Enable **Email/Password**, then **Google**. Set the support email for Google as requested by Firebase.
 5. Under Authentication → Settings → Authorized domains, confirm localhost for browser testing where applicable and your approved hosted domain.
 6. Under **Project Settings → Service accounts**, click **Generate new private key**. Save the downloaded JSON **outside the project and git checkout**; never share it in chat or paste it in mobile config.
-7. Firebase Console → Project settings → General → Your apps → **Web app**. Register e.g. `bluewatch-web-dev` and copy the public web config (`apiKey`, `authDomain`, `projectId`, `appId`, `messagingSenderId`). These client config values are *not* Firebase Admin secrets.
+7. Firebase Console → Project settings → General → Your apps → **Web app**. Register e.g. `oil-spill-monitoring-buoy-web-dev` and copy the public web config (`apiKey`, `authDomain`, `projectId`, `appId`, `messagingSenderId`). These client config values are *not* Firebase Admin secrets.
 
 ## 3. Configure the backend `.env`
 
@@ -34,7 +34,7 @@ From the service account JSON copy these **to the server environment only**:
 **Simpler local option:** instead of pasting private key in `.env`, put the JSON outside the extracted package and set `GOOGLE_APPLICATION_CREDENTIALS` to its absolute path. Keep project ID in `.env`; leave private key/email blank. For example:
 
 ```powershell
-$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\bluewatch-dev-service-account.json'
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\oil-spill-monitoring-buoy-service-account.json'
 ```
 
 Generate two independent strong secrets:
@@ -79,7 +79,7 @@ Start-Process http://localhost:3000/swagger
 ## 6. Create the first administrator
 
 1. Set up mobile public Firebase config (step 8) and register through the mobile app using email/password.
-2. Click the emailed verification link and return to BlueWatch; choose **I verified my email**.
+2. Click the emailed verification link and return to Oil Spill Monitoring Buoy; choose **I verified my email**.
 3. The app calls `POST /api/v1/auth/bootstrap` and creates `users/{uid}` with role `VIEWER` and `allowedDeviceIds: []`.
 4. Open Firebase Console → Authentication → Users; copy **your own** UID.
 5. Open Firestore → `users` → document with that UID. Change only your user document's `role` to `ADMIN`. Keep `status: ACTIVE`. This is a *manual first-admin setup* in the development project, not a public API that lets users promote themselves.
@@ -112,9 +112,9 @@ Invoke-RestMethod -Method Post -Uri "$base/device/measurements" -Headers $device
 
 Repeat the identical HTTP request to check `duplicate: true`. Do **not** interpret these invented values as scientific measurements.
 
-## 8. Configure BlueWatch Ionic (public configuration only)
+## 8. Configure Oil Spill Monitoring Buoy Ionic (public configuration only)
 
-Extract `BlueWatch_Mobile_Phase1.zip`. Edit:
+Clone `https://github.com/erwin-io/oil-spill-monitoring-buoy-app`. Edit:
 
 - `app/src/environments/environment.ts` (local development)
 - `app/src/environments/environment.prod.ts` (deployment)
@@ -141,7 +141,7 @@ The app has `ionic.config.json` and Angular project name `app`; `npx ionic serve
 
 ## 10. Configure Android Firebase Cloud Messaging
 
-1. Under Firebase project settings → Your apps, register **Android** using application ID `com.bluewatch.monitoring` (must match `capacitor.config.ts`).
+1. Under Firebase project settings → Your apps, register **Android** using application ID `io.erwin.oilspillbuoy` (must match `capacitor.config.ts`).
 2. Download the Android `google-services.json`. This is Android app configuration, not a service account private key. Store it at `app/android/app/google-services.json` after Android initialization; the path is gitignored in this package.
 3. Enable the required Firebase Google sign-in OAuth setup and register Android SHA-1/SHA-256 fingerprints for your debug/release keystores.
 4. Install Android Studio and run in the app directory:

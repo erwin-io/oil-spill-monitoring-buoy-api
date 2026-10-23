@@ -37,7 +37,7 @@ export async function pushAlert(db,messaging,job,ref){
   if(eligible.length){
    const result=await messaging.sendEachForMulticast({
     tokens:eligible.map(x=>x.token.data().token),
-    notification:{title:'BlueWatch alert',body:`${alert.data().type} on ${job.deviceId}`},
+    notification:{title:'Oil Spill Monitoring Buoy alert',body:`${alert.data().type} on ${job.deviceId}`},
     data:{alertId:alert.id,deviceId:job.deviceId,type:alert.data().type},
    });
    for(let i=0;i<eligible.length;i++){

@@ -1,4 +1,4 @@
-# BlueWatch API — Phase 1 release gates (updated 2026-10-24)
+# Oil Spill Monitoring Buoy API — Phase 1 release gates (updated 2026-10-24)
 
 This status supersedes the October 23 packaging-only report. Review the
 **current GitHub Actions results on the exact candidate commit**, not historical
@@ -7,7 +7,7 @@ test counts.
 ## Implemented development controls
 - Reproducible `package-lock.json` and `npm ci` in CI.
 - Node syntax checking and unit tests for domain, validation and OpenAPI catalogue.
-- Isolated `demo-bluewatch-ci` Firebase Authentication and Firestore emulator
+- Isolated `demo-oil-spill-monitoring-buoy-ci` Firebase Authentication and Firestore emulator
   HTTP/integration tests. No live credentials are needed or used.
 - Immutable raw-seawater measurements, payload conflict detection and stale
   latest-record protection.
