@@ -11,8 +11,14 @@ import {dispatch,offlineSweep} from './jobs.js';
 import {userAuth,deviceAuth,requireRole,deviceScope,asyncRoute,errorHandler} from './security.js';
 import {httpError} from './domain.js';
 const app=express();app.disable('x-powered-by');app.set('trust proxy',1);
-const origins=(process.env.ALLOWED_ORIGINS??'').split(',').map(x=>x.trim()).filter(Boolean);
-app.use((req,res,next)=>helmet(req.path.startsWith('/swagger')?{contentSecurityPolicy:false}:{})(req,res,next));app.use(cors({origin:(o,cb)=>!o||origins.includes(o)?cb(null,true):cb(httpError('ORIGIN_DENIED',403))}));
+// Capacitor 7's default Android WebView origin is https://localhost
+// (not the Ionic dev server's http://localhost:8100); iOS uses capacitor://localhost.
+// These are CORS origins, NOT authentication bypasses. All protected routes
+// still verify Firebase ID tokens or per-device credentials.
+const nativeOrigins=['https://localhost','capacitor://localhost'];
+const origins=new Set([...nativeOrigins,...(process.env.ALLOWED_ORIGINS??'').split(',').map(x=>x.trim()).filter(Boolean)]);
+app.use((req,res,next)=>helmet(req.path.startsWith('/swagger')?{contentSecurityPolicy:false}:{})(req,res,next));
+app.use(cors({origin:(o,cb)=>!o||origins.has(o)?cb(null,true):cb(httpError('ORIGIN_DENIED',403))}));
 app.use(express.json({limit:'24kb',strict:true}));app.use((req,res,next)=>{req.requestId=randomUUID();res.set('x-request-id',req.requestId);next()});
 app.use(rateLimit({windowMs:60000,limit:120,standardHeaders:'draft-7',legacyHeaders:false}));
 const R=(m,path,...handlers)=>app[m](path,...handlers.map(fn=>fn.length===3?fn:asyncRoute(fn)));
