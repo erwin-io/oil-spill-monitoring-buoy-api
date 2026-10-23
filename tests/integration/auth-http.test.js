@@ -73,3 +73,66 @@ test('Firebase auth emulator: unverified, verified, scoped, disabled and admin H
   await live.close();
  }
 });
+
+test('Firebase emulators: registered buoy keys, disable/re-enable, rotation and config CAS',async()=>{
+ const key=randomUUID().slice(0,12),email=`admin_${key}@example.test`,password='Strong-Test-Password-123!';
+ const user=await auth.createUser({email,password,emailVerified:true});
+ await db.collection('users').doc(user.uid).set({
+  email,role:'ADMIN',status:'ACTIVE',displayName:'Test administrator',allowedDeviceIds:[],
+ });
+ const token=await signIn(email,password), buoyId='buoy_'+key, live=server();
+ const api=async(method,path,body,headers={})=>{
+  const r=await fetch(`${live.url}${path}`,{
+   method,
+   headers:{'content-type':'application/json',...headers},
+   ...(body?{body:JSON.stringify(body)}:{}),
+  });
+  return {code:r.status,body:await r.json()};
+ };
+ const human={Authorization:`Bearer ${token}`};
+ const payload=(measurementId)=>({
+  measurementId,measuredAt:new Date().toISOString(),classification:'NORMAL',
+  confidence:.85,totalFluorescence:3,
+  spectral:{f415:1,f445:1,f480:1,f515:1,f555:1,f590:1},
+ });
+ try{
+  const registered=await api('POST','/api/v1/devices',{deviceId:buoyId,name:'Test buoy'},human);
+  assert.equal(registered.code,201,JSON.stringify(registered.body));
+  const original=registered.body.deviceKey;
+  assert.equal(typeof original,'string');
+  const headers=(key)=>({'x-device-id':buoyId,'x-device-key':key});
+  const first=await api('POST','/api/v1/device/measurements',payload('m1'),headers(original));
+  assert.equal(first.code,201,JSON.stringify(first.body));
+  const bad=await api('POST','/api/v1/device/measurements',payload('m2'),headers('wrong-device-secret'));
+  assert.equal(bad.code,401);
+
+  const cfg=await api('GET',`/api/v1/devices/${buoyId}/config`,null,human);
+  assert.equal(cfg.code,200);
+  assert.equal(cfg.body.configVersion,1);
+  const updated=await api('PUT',`/api/v1/devices/${buoyId}/config`,{configVersion:1,samplingIntervalMinutes:20},human);
+  assert.equal(updated.code,200,JSON.stringify(updated.body));
+  assert.equal(updated.body.configVersion,2);
+  const conflict=await api('PUT',`/api/v1/devices/${buoyId}/config`,{configVersion:1,samplingIntervalMinutes:25},human);
+  assert.equal(conflict.code,409);
+
+  const disabled=await api('PATCH',`/api/v1/devices/${buoyId}`,{status:'DISABLED'},human);
+  assert.equal(disabled.code,200);
+  const afterDisabled=await api('POST','/api/v1/device/measurements',payload('m3'),headers(original));
+  assert.equal(afterDisabled.code,401);
+  const rotated=await api('POST',`/api/v1/devices/${buoyId}/rotate-key`,{},human);
+  assert.equal(rotated.code,200);
+  const newSecret=rotated.body.deviceKey;
+  assert.notEqual(newSecret,original);
+  const stillDisabled=await api('POST','/api/v1/device/measurements',payload('m4'),headers(newSecret));
+  assert.equal(stillDisabled.code,401,'Rotation cannot enable disabled buoys');
+
+  const enabled=await api('PATCH',`/api/v1/devices/${buoyId}`,{status:'ACTIVE'},human);
+  assert.equal(enabled.code,200);
+  const oldRevoked=await api('POST','/api/v1/device/measurements',payload('m5'),headers(original));
+  assert.equal(oldRevoked.code,401);
+  const newAccepted=await api('POST','/api/v1/device/measurements',payload('m6'),headers(newSecret));
+  assert.equal(newAccepted.code,201,JSON.stringify(newAccepted.body));
+ }finally{
+  await live.close();
+ }
+});
