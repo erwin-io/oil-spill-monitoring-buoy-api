@@ -4,6 +4,17 @@
 **Authoritative tracker:** [Official Development Checklist](https://docs.google.com/spreadsheets/d/1u7q7yetXcge09qaLFywK7s6wSRKjLJcKP-R6pi8t1pQ/edit), tab `Development Checklist`, IDs 1–103.  
 **Starting baseline:** 13 Completed / 25 In Progress / 0 Blocked / 65 Not Started. **Verified original tracker after this batch:** 16 Completed / 22 In Progress / 0 Blocked / 65 Not Started. Newly accepted: A-06, A-09, B-15 (software/Firebase emulator only).
 
+## Owner-approved validation update — one Firebase project (later decision)
+The thesis owner will use the **existing Firebase project** for local API and real Android development; do **not** require a second staging Firebase project. For repeatable synthetic end-to-end tests, use Firestore/Auth **local emulators** with disposable `demo-` identifier (these are not real cloud projects). A separate `verify:existing-firebase` command checks the existing Firebase/API in **read-only** mode with an existing verified user, without bootstrap or scientific test incident writes.
+
+Automated commands:
+- `npm run verify:all` from API folder: API emulator tests + sibling Ionic tests/build in one run on Windows
+- `npm run verify:local` (API or app): isolated local suite for that repo
+- `npm run verify:existing-firebase` (API): optional read-only existing Firebase smoke using `THESIS_*` env vars
+- `npm run verify:android` (app): optional Gradle debug build + ADB install/launch; requires Android SDK and matching private `google-services.json`
+
+New tests cover live-smoke write protection, mobile REST contracts, Chart.js numerical mapping, dashboard counters, scoped buoy filters, history cursors, and configuration optimistic conflict UX. Native FCM/Pusher delivery, real rendered phone screens and optical science remain separately observed/manual gates. Do not mark these Completed from mocked tests alone. Detailed instructions: `docs/THESIS_ONE_FIREBASE_TESTING.md` (API) and `docs/THESIS_LOCAL_MOBILE_VALIDATION.md` (mobile). **This addendum supersedes older references below that request a separate staging Firebase project.**
+
 ## 1. Immutable architectural decisions
 - ESP32-S3 + A7670C HTTPS → Express/Vercel → Cloud Firestore → private Pusher hints + FCM → Ionic/Angular/Capacitor.
 - 365 nm UV + ZWB2 + quartz optical cell + L39 + AS7341 measures **raw seawater only**; edge Random Forest is advisory and requires labeled experimental calibration. Do not claim certified oil concentration, ppm, sensitivity or accuracy.
