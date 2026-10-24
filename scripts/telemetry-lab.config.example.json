@@ -1,0 +1,13 @@
+{
+  "note": "LOCAL PRIVATE CONFIG TEMPLATE. Copy to %USERPROFILE%\\secure\\oilspill\\telemetry-lab.config.json and replace only the Pusher placeholders. NEVER COMMIT A REAL PUSHER SECRET.",
+  "pusher": {
+    "appId": "REPLACE_WITH_PUSHER_CHANNELS_APP_ID",
+    "key": "REPLACE_WITH_PUSHER_CHANNELS_KEY",
+    "secret": "REPLACE_WITH_PUSHER_CHANNELS_SECRET",
+    "cluster": "ap1"
+  },
+  "fcm": {
+    "projectId": "oil-spill-monitoring-buoy",
+    "serviceAccountJson": "AUTO"
+  }
+}
