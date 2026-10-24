@@ -1,5 +1,8 @@
 # Isolated Buoy Simulator — Pusher + FCM provider acceptance
 
+> **Repeatable scenarios:** Use `npm run sim:telemetry` with the one-time private config and editable fixtures described in [REUSABLE_TELEMETRY_LAB.md](REUSABLE_TELEMETRY_LAB.md). The legacy `npm run sim:pipeline` modes below remain supported.
+
+
 Purpose: exercise the full HTTP simulator upload, alert, Firestore outbox, real Pusher Channels and optional real FCM sender WITHOUT adding synthetic measurements to the one live Firebase/Firestore project.
 
 ## What runs
