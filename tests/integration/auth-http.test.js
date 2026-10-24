@@ -143,3 +143,82 @@ test('Firebase emulators: registered buoy keys, disable/re-enable, rotation and 
   await live.close();
  }
 });
+
+test('Firebase emulators: provisioning, scoped history and oil alert acknowledge over HTTP',async()=>{
+ const tag=randomUUID().replaceAll('-','').slice(0,14);
+ const password='Strong-Test-Password-123!';
+ const create=async(role,allowedDeviceIds=[])=>{
+  const email=`phase1_${role.toLowerCase()}_${tag}@example.test`;
+  const user=await auth.createUser({email,password,emailVerified:true});
+  await db.collection('users').doc(user.uid).set({email,role,status:'ACTIVE',displayName:role,allowedDeviceIds});
+  return {user,token:await signIn(email,password)};
+ };
+ const buoyId='phase1_'+tag;
+ const admin=await create('ADMIN');
+ const viewer=await create('VIEWER',[buoyId]);
+ const outsider=await create('VIEWER');
+ const operator=await create('OPERATOR',[buoyId]);
+ const live=await server();
+ const api=async(method,path,body,headers={})=>{
+  const r=await fetch(live.url+path,{
+   method,headers:{'content-type':'application/json',...headers},
+   ...(body!==undefined?{body:JSON.stringify(body)}:{}),
+  });
+  return {code:r.status,body:await r.json()};
+ };
+ const bearer=person=>({Authorization:`Bearer ${person.token}`});
+ const timestamps=[3,2,1].map(m=>new Date(Date.now()-m*60000).toISOString());
+ const sample=(key,at,classification='NORMAL')=>({
+  measurementId:key,measuredAt:at,classification,confidence:.95,totalFluorescence:12,
+  spectral:{f415:1,f445:2,f480:3,f515:4,f555:5,f590:6}
+ });
+ try{
+  const created=await api('POST','/api/v1/devices',{deviceId:buoyId,name:'Phase 1 test buoy'},bearer(admin));
+  assert.equal(created.code,201,JSON.stringify(created.body));
+  const deviceHeaders={'x-device-id':buoyId,'x-device-key':created.body.deviceKey};
+  const duplicate=await api('POST','/api/v1/devices',{deviceId:buoyId,name:'Repeat'},bearer(admin));
+  assert.equal(duplicate.code,409);
+  const rejectedProvision=await api('POST','/api/v1/devices',{deviceId:'unprivileged_'+tag,name:'No'},bearer(viewer));
+  assert.equal(rejectedProvision.code,403);
+  const inaccessible=await api('GET',`/api/v1/devices/${buoyId}/measurements`,undefined,bearer(outsider));
+  assert.equal(inaccessible.code,403);
+  const emptyHistory=await api('GET',`/api/v1/devices/${buoyId}/measurements`,undefined,bearer(viewer));
+  assert.equal(emptyHistory.code,200);
+  assert.deepEqual(emptyHistory.body.items,[]);
+  const first=await api('POST','/api/v1/device/measurements',sample('older',timestamps[0]),deviceHeaders);
+  assert.equal(first.code,201);
+  const oil=await api('POST','/api/v1/device/measurements',sample('oil',timestamps[1],'PETROLEUM'),deviceHeaders);
+  assert.equal(oil.code,201);
+  const page1=await api('GET',`/api/v1/devices/${buoyId}/measurements?limit=1`,undefined,bearer(viewer));
+  assert.equal(page1.code,200);
+  assert.equal(page1.body.items[0].measurementId,'oil');
+  assert.ok(page1.body.nextCursor);
+  const page2=await api('GET',`/api/v1/devices/${buoyId}/measurements?limit=1&cursor=${encodeURIComponent(page1.body.nextCursor)}`,undefined,bearer(viewer));
+  assert.equal(page2.code,200);
+  assert.equal(page2.body.items[0].measurementId,'older');
+  assert.equal(page2.body.nextCursor,null);
+  const latest=await api('GET',`/api/v1/devices/${buoyId}/measurements/latest`,undefined,bearer(viewer));
+  assert.equal(latest.body.measurementId,'oil');
+  const inbox=await api('GET','/api/v1/alerts',undefined,bearer(viewer));
+  assert.equal(inbox.code,200);
+  const alert=inbox.body.items.find(x=>x.deviceId===buoyId&&x.type==='PETROLEUM');
+  assert.ok(alert,'petroleum alert must exist');
+  const denied=await api('PATCH',`/api/v1/alerts/${alert.id}/acknowledge`,{},bearer(viewer));
+  assert.equal(denied.code,403);
+  const foreign=await api('GET',`/api/v1/alerts/${alert.id}`,undefined,bearer(outsider));
+  assert.equal(foreign.code,403);
+  const acknowledged=await api('PATCH',`/api/v1/alerts/${alert.id}/acknowledge`,{},bearer(operator));
+  assert.equal(acknowledged.code,200);
+  const ackDoc=await db.collection('alerts').doc(alert.id).get();
+  assert.equal(ackDoc.data().status,'ACKNOWLEDGED');
+  assert.equal(ackDoc.data().acknowledgedBy,operator.user.uid);
+  const resolved=await api('POST','/api/v1/device/measurements',sample('recovered',timestamps[2]),deviceHeaders);
+  assert.equal(resolved.code,201);
+  const final=await api('GET',`/api/v1/alerts/${alert.id}`,undefined,bearer(viewer));
+  assert.equal(final.body.status,'RESOLVED');
+  const staleAck=await api('PATCH',`/api/v1/alerts/${alert.id}/acknowledge`,{},bearer(operator));
+  assert.equal(staleAck.code,409);
+ }finally{
+  await live.close();
+ }
+});
