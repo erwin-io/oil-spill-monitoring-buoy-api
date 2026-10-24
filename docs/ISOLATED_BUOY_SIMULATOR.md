@@ -60,21 +60,19 @@ To use real hosted Pusher events, add server-side Pusher variables APP_ID/KEY/SE
 
 To enable real hosted Firebase notifications, verify correct FCM Admin permissions, set FCM_ENABLED=true in Vercel and ensure job dispatch is scheduled. No fake PETROLEUM measurements should be uploaded to the cloud.
 
-## B-13: Cloud Firebase indexes and TTL, not replaced by simulation
+## B-13: Cloud Firebase indexes, Admin environment and free rate-limit cleanup
 
 Review API firestore.indexes.json then, after owner approval, deploy just Firestore indexes:
 
     npx firebase-tools@15.9.0 deploy --only firestore:indexes --project oil-spill-monitoring-buoy
 
-This does not overwrite Firestore Security Rules. Set a Firestore TTL policy on collection group _rateLimitWindows and timestamp field expiresAt in Google Cloud Console (Firestore → Time-to-live), or run:
-
-    gcloud firestore fields ttls update expiresAt --collection-group=_rateLimitWindows --enable-ttl --project=oil-spill-monitoring-buoy
+This does not overwrite Firestore Security Rules. Firestore TTL deletes require billing, so this thesis build does NOT require a paid TTL policy. Instead, the existing authenticated /api/v1/jobs/dispatch endpoint now prunes up to 100 expired _rateLimitWindows records on each run (bounded ordinary Firestore deletes within normal project quota). Ensure this scheduler is running; inspect the prunedRateWindows field. Paid TTL is optional, not a completion blocker.
 
 Then run the existing live-cloud read-only API smoke, configured with a verified existing user:
 
     npm run verify:existing-firebase
 
-Index deployment and TTL updates are real cloud changes and are NOT performed by this script.
+Index deployment is a real cloud change and is NOT performed by this script. No paid TTL setup is needed.
 
 ## Completion criteria
 
