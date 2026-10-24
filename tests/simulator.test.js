@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {checkSandbox,sampleMeasurement} from '../scripts/simulator-pipeline.mjs';
+import {checkSandbox,sampleMeasurement,readTelemetryPlan} from '../scripts/simulator-pipeline.mjs';
+import {readFileSync} from 'node:fs';
 
 const base={
  FIREBASE_PROJECT_ID:'demo-oil-spill-isolated',
@@ -26,4 +27,34 @@ test('simulator telemetry is always identified as synthetic, never scientific ob
  assert.ok(value.qualityFlags.includes('SIMULATED_DO_NOT_USE_FOR_SCIENCE'));
  assert.equal(value.modelVersion,'no-real-sensor');
  assert.equal(value.measurementId,'thesis_001');
+});
+
+
+test('all editable telemetry scenarios have constrained steps and alert expectations',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('../scripts/telemetry-lab.scenarios.json',import.meta.url),'utf8'));
+ const cases={
+  normal:[],interference:[],inconclusive:[],below_threshold:[],
+  petroleum:['PETROLEUM'],
+  low_battery:['LOW_BATTERY'],
+  sensor_fault:['SENSOR_FAULT'],
+  maintenance:['CELL_MAINTENANCE_REQUIRED'],
+  all:['PETROLEUM','LOW_BATTERY','SENSOR_FAULT','CELL_MAINTENANCE_REQUIRED']
+ };
+ for(const [name,alertTypes]of Object.entries(cases)){
+  const plan=readTelemetryPlan(name,fixture);
+  assert.ok(plan.steps.length>0);
+  assert.deepEqual([...plan.expectedAlerts].sort(),[...alertTypes].sort());
+  assert.ok(plan.steps.every(s=>['health','measurement'].includes(s.kind)));
+ }
+ assert.throws(()=>readTelemetryPlan('unknown',fixture),/UNKNOWN_TELEMETRY_SCENARIO/);
+});
+
+test('non-alert measurements cannot be configured to send accidental FCM from lab fixtures',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('../scripts/telemetry-lab.scenarios.json',import.meta.url),'utf8'));
+ for(const name of ['normal','interference','inconclusive','below_threshold']){
+  const plan=readTelemetryPlan(name,fixture);
+  assert.equal(plan.expectedAlerts.length,0,name+' must never ask for an FCM token');
+ }
+ const bad={scenarios:{bad:{steps:[{kind:'arbitrary'}],expectedAlerts:[]}}};
+ assert.throws(()=>readTelemetryPlan('bad',bad),/SCENARIO_STEP_KIND_INVALID/);
 });
