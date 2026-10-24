@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { firebase } from '../../src/firebase.js';
-import { ingestMeasurement, ingestHealth } from '../../src/handlers.js';
+import { ingestMeasurement, ingestHealth, history } from '../../src/handlers.js';
 import { pushAlert, offlineSweep } from '../../src/jobs.js';
 import { CONFIG_DEFAULT, alertKey } from '../../src/domain.js';
 
@@ -193,4 +193,37 @@ test('Firestore: resumable offline sweep visits buoy IDs beyond first page and d
   else process.env.MAX_OFFLINE_SWEEP_DEVICES=original;
   await progress.delete();
  }
+});
+
+test('Firestore: 135-record history supports stable timestamp/cursor pages and rejects foreign cursors',async()=>{
+ const id=device();await seedDevice(id);
+ const batch=db.batch();
+ const measurements=db.collection('devices').doc(id).collection('measurements');
+ for(let i=0;i<135;i++){
+  const measuredAt=new Date(Date.now()-Math.floor(i/4)*1000).toISOString();
+  const ref=measurements.doc('history_'+String(i).padStart(3,'0'));
+  batch.set(ref,{...measure(ref.id,measuredAt),deviceId:id,receivedAt:iso(),source:'RAW_SEAWATER'});
+ }
+ await batch.commit();
+ let cursor=null;
+ const visited=new Set();
+ const pageSizes=[];
+ do{
+  const res=response();
+  await history({params:{deviceId:id},query:{limit:'50',...(cursor?{cursor}:{})}},res);
+  assert.equal(res.statusCode,200);
+  pageSizes.push(res.payload.items.length);
+  for(const m of res.payload.items){
+   assert.equal(m.deviceId,id);
+   assert.ok(!visited.has(m.measurementId),'cursor traversal must not duplicate records');
+   visited.add(m.measurementId);
+  }
+  cursor=res.payload.nextCursor;
+ }while(cursor);
+ assert.deepEqual(pageSizes,[50,50,35]);
+ assert.equal(visited.size,135);
+ await assert.rejects(
+  history({params:{deviceId:id},query:{cursor:'nonexistent'}},response()),
+  {code:'INVALID_CURSOR',status:400}
+ );
 });
