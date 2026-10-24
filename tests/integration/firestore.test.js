@@ -5,6 +5,7 @@ import { firebase } from '../../src/firebase.js';
 import { ingestMeasurement, ingestHealth, history, alerts, markAlertRead } from '../../src/handlers.js';
 import { pushAlert, offlineSweep } from '../../src/jobs.js';
 import { CONFIG_DEFAULT, alertKey } from '../../src/domain.js';
+import {distributedRateLimit} from '../../src/security.js';
 
 if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_PROJECT_ID?.startsWith('demo-')){
  throw new Error('Integration tests MUST use a demo- Firebase project with FIRESTORE_EMULATOR_HOST');
@@ -316,4 +317,22 @@ test('Firestore: FCM retires invalid tokens and safely retries transient recipie
  await pushAlert(db,messenger,job,ref);
  assert.equal(calls,2);
  assert.equal((await ref.collection('fcmReceipts').doc(tokens[2].key).get()).data().status,'SENT');
+});
+
+
+test('Firestore: distributed per-minute telemetry quota is shared, denies at limit and never stores raw device secret',async()=>{
+ const id=device(),limiter=distributedRateLimit('thesis_emulator_quota',2);
+ const req={deviceId:id,ip:'203.0.113.5',get:()=>'',method:'POST'};
+ const headers={};const res={set:(key,val)=>{headers[key]=val;return res;}};
+ const attempt=()=>new Promise(resolve=>{void limiter(req,res,(err)=>resolve(err??null));});
+ assert.equal(await attempt(),null);
+ assert.equal(await attempt(),null);
+ const error=await attempt();
+ assert.equal(error.code,'RATE_LIMITED');
+ assert.equal(error.status,429);
+ assert.ok(Number(headers['Retry-After'])>=1);
+ const records=await db.collection('_rateLimitWindows').where('kind','==','thesis_emulator_quota').get();
+ const target=records.docs.find(d=>d.data().count===2);
+ assert.ok(target,'quota counter should be persisted in Firestore');
+ assert.equal(JSON.stringify(target.data()).includes(id),false,'raw identifiers must not be persisted');
 });
