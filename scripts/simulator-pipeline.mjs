@@ -13,7 +13,7 @@
  */
 import {randomUUID} from 'node:crypto';
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {initializeApp,cert,deleteApp} from 'firebase-admin/app';
 import {getMessaging} from 'firebase-admin/messaging';
@@ -194,7 +194,7 @@ async function run(){
  }
  return report;
 }
-const main=process.argv[1]&&fileURLToPath(import.meta.url)===fileURLToPath(new URL('file://'+process.argv[1]).toString()) ;
+const main=process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url);
 if(main){
  let report;
  try{report=await run()}
