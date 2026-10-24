@@ -47,9 +47,10 @@ test('protected claim credential, device PAIR, five-minute expiry, concurrent cl
   assert.equal((await call('POST',ownedPath+'/claims',{challengeId:first.value.challengeId,claimCode},human(alice))).status,409);
   const second=await call('POST','/api/v1/device/pairing-challenges',{},device);
   assert.equal(second.status,201);
-  const candidate={challengeId:second.value.challengeId,claimCode};
+  const candidate={claimCode};
   const [a,b]=await Promise.all([call('POST',ownedPath+'/claims',candidate,human(alice)),call('POST',ownedPath+'/claims',candidate,human(bob))]);
   assert.deepEqual([a.status,b.status].sort(),[202,409]);
+  assert.equal((a.status===202?a:b).value.challengeId,second.value.challengeId);
   const winner=a.status===202?alice:bob,loser=a.status===202?bob:alice;
   assert.equal((await call('GET',ownedPath+'/claims/'+second.value.challengeId,undefined,human(loser))).status,404);
   assert.equal((await call('POST','/api/v1/device/pairing-confirmations',{challengeId:second.value.challengeId,nonce:claimCode},device)).status,403);

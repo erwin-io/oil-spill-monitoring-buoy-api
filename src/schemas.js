@@ -1,7 +1,7 @@
 import {z} from 'zod';
 const id=z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 export const deviceId=id;
-export const claimRequest=z.object({challengeId:id,claimCode:z.string().min(32).max(128)}).strict();
+export const claimRequest=z.object({challengeId:id.optional(),claimCode:z.string().min(32).max(128)}).strict();
 export const confirmClaim=z.object({challengeId:id,nonce:z.string().min(32).max(128)}).strict();
 const at=z.string().datetime({offset:true});
 const spectral=z.object({f415:z.number().finite().nonnegative(),f445:z.number().finite().nonnegative(),f480:z.number().finite().nonnegative(),f515:z.number().finite().nonnegative(),f555:z.number().finite().nonnegative(),f590:z.number().finite().nonnegative()}).strict();

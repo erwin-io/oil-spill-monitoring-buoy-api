@@ -39,18 +39,19 @@ export async function startPairing(req,res){
 
 export async function requestClaim(req,res){
  const id=validate(deviceId,req.params.deviceId),{challengeId,claimCode}=validate(claimRequest,req.body);
- const db=firebase().db,{device,credential,pairing}=refs(db,id);
+ const db=firebase().db,{device,credential,pairing}=refs(db,id);let selectedChallengeId;
  await db.runTransaction(async tx=>{
   const [d,c,p]=await Promise.all([tx.get(device),tx.get(credential),tx.get(pairing)]);
   if(!d.exists||!c.exists)throw httpError('NOT_FOUND',404);
   if(d.data().ownerUid)throw httpError('ALREADY_OWNED',409);
-  if(!p.exists||p.data().challengeId!==challengeId||p.data().expiresAt<=Date.now())throw httpError('CHALLENGE_EXPIRED',409);
+  if(!p.exists||challengeId&&p.data().challengeId!==challengeId||p.data().expiresAt<=Date.now())throw httpError('CHALLENGE_EXPIRED',409);
   if(p.data().state!=='OPEN'||p.data().candidateUid)throw httpError('CLAIM_ALREADY_PENDING',409);
   if(p.data().claimCodeVersion!==c.data().claimCodeVersion||!c.data().claimCodeHash||
    !keysEqual(hash('claim',claimCode),c.data().claimCodeHash))throw httpError('INVALID_CLAIM_CODE',403);
+  selectedChallengeId=p.data().challengeId;
   tx.update(pairing,{state:'PENDING',candidateUid:req.user.uid,requestedAt:stamp()});
  });
- res.status(202).json({deviceId:id,challengeId,state:'PENDING'});
+ res.status(202).json({deviceId:id,challengeId:selectedChallengeId,state:'PENDING'});
 }
 
 // The buoy confirms the candidate displayed in its own pairing flow. The
