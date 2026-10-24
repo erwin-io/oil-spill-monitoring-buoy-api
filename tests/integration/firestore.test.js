@@ -261,6 +261,7 @@ test('Firestore: scoped alerts paginate past 100, filter status, count all open 
  do{
   const result=response();await alerts(req(cursor),result);
   assert.equal(result.payload.openCount,105);
+  if(visited.length===0)assert.equal(result.payload.unreadCount,105);
   if(firstId===undefined)firstId=result.payload.items[0].id;
   for(const a of result.payload.items){
    assert.equal(a.deviceId,id);
@@ -278,6 +279,12 @@ test('Firestore: scoped alerts paginate past 100, filter status, count all open 
  assert.equal(read.payload.unread,false);
  const refreshed=response();await alerts(req(),refreshed);
  assert.equal(refreshed.payload.items[0].unread,false);
+ assert.equal(refreshed.payload.unreadCount,104);
+ await db.collection('alerts').doc(firstId).update({episode:1});
+ const reopened=response();await alerts(req(),reopened);
+ assert.equal(reopened.payload.items[0].unread,true,'new alert episode must be unread');
+ assert.equal(reopened.payload.unreadCount,105);
+
  await assert.rejects(
   markAlertRead({user:{uid,role:'VIEWER',allowedDeviceIds:[id]},params:{alertId:'foreign_'+foreign}},response()),
   {status:403,code:'FORBIDDEN'}
