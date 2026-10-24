@@ -7,3 +7,6 @@ secrets/
 coverage/
 .vercel/
 .test-output/
+
+# Local-only provider secrets for the telemetry lab; never commit this file.
+/scripts/telemetry-lab.config.json
