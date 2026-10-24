@@ -208,6 +208,7 @@ test('Firestore: 135-record history supports stable timestamp/cursor pages and r
  let cursor=null;
  const visited=new Set();
  const pageSizes=[];
+ let previousTime=Infinity;
  do{
   const res=response();
   await history({params:{deviceId:id},query:{limit:'50',...(cursor?{cursor}:{})}},res);
@@ -215,6 +216,9 @@ test('Firestore: 135-record history supports stable timestamp/cursor pages and r
   pageSizes.push(res.payload.items.length);
   for(const m of res.payload.items){
    assert.equal(m.deviceId,id);
+   const time=Date.parse(m.measuredAt);
+   assert.ok(time<=previousTime,'history must be ordered newest first across pages');
+   previousTime=time;
    assert.ok(!visited.has(m.measurementId),'cursor traversal must not duplicate records');
    visited.add(m.measurementId);
   }
