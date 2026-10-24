@@ -197,8 +197,10 @@ export async function alerts(req,res){
  const names=[...new Set(items.map(d=>d.data().deviceId))];
  const nameDocs=await Promise.all(names.map(id=>db.collection('devices').doc(id).get()));
  const deviceNames=new Map(nameDocs.filter(d=>d.exists).map(d=>[d.id,d.data().name]));
- const readDocs=await Promise.all(items.map(d=>db.collection('users').doc(req.user.uid).collection('readAlerts').doc(d.id).get()));
- const output=items.map((d,i)=>({...clean(d),deviceName:deviceNames.get(d.data().deviceId)??d.data().deviceId,unread:!readDocs[i].exists}));
+ const readDocs=await db.collection('users').doc(req.user.uid).collection('readAlerts').get();
+ const readEpisodes=new Map(readDocs.docs.map(d=>[d.id,d.data().episode??0]));
+ const output=items.map(d=>({...clean(d),deviceName:deviceNames.get(d.data().deviceId)??d.data().deviceId,
+  unread:readEpisodes.get(d.id)!==(d.data().episode??0)}));
  // Open alerts are an independent count; never derive this from a partial page.
  const countQuery=(id)=>{
   let q=db.collection('alerts').where('status','==','OPEN');
@@ -210,14 +212,26 @@ export async function alerts(req,res){
   const counts=await Promise.all(chunks.slice(i,i+10).map(countQuery));
   openCount+=counts.reduce((n,c)=>n+c.data().count,0);
  }
- res.json({items:output,nextCursor:extra?items.at(-1)?.id:null,openCount});
+ // Count OPEN alerts not yet seen in their *current episode*. A stable alert
+ // document ID may be reopened; old read receipts must not hide new incidents.
+ let readOpenCount=0;
+ for(let i=0;i<readDocs.docs.length;i+=20){
+  const batch=await Promise.all(readDocs.docs.slice(i,i+20).map(d=>db.collection('alerts').doc(d.id).get()));
+  for(let n=0;n<batch.length;n++){
+   const alert=batch[n],receipt=readDocs.docs[i+n];
+   if(alert.exists&&alert.data().status==='OPEN'&&canRead(req.user,alert.data().deviceId)&&
+      (receipt.data().episode??0)===(alert.data().episode??0))readOpenCount++;
+  }
+ }
+ res.json({items:output,nextCursor:extra?items.at(-1)?.id:null,openCount,
+  unreadCount:Math.max(0,openCount-readOpenCount)});
 }
 export async function markAlertRead(req,res){
  const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId),alert=await ref.get();
  if(!alert.exists)throw httpError('NOT_FOUND',404);
  if(!canRead(req.user,alert.data().deviceId))throw httpError('FORBIDDEN',403);
  await db.collection('users').doc(req.user.uid).collection('readAlerts').doc(alert.id)
-  .set({alertId:alert.id,deviceId:alert.data().deviceId,readAt:now()},{merge:true});
+  .set({alertId:alert.id,deviceId:alert.data().deviceId,episode:alert.data().episode??0,readAt:now()},{merge:true});
  res.json({alertId:alert.id,unread:false});
 }
 export async function alertDetail(req,res){const doc=await firebase().db.collection('alerts').doc(req.params.alertId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);if(!canRead(req.user,doc.data().deviceId))throw httpError('FORBIDDEN',403);res.json(clean(doc))}
