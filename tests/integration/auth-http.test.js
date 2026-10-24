@@ -174,8 +174,12 @@ test('Firebase emulators: provisioning, scoped history and oil alert acknowledge
   spectral:{f415:1,f445:2,f480:3,f515:4,f555:5,f590:6}
  });
  try{
-  const created=await api('POST','/api/v1/devices',{deviceId:buoyId,name:'Phase 1 test buoy'},bearer(admin));
+  const created=await api('POST','/api/v1/devices',{deviceId:buoyId,name:'Phase 1 test buoy',firmwareVersion:'1.0-test',modelVersion:'rf-fixture'},bearer(admin));
   assert.equal(created.code,201,JSON.stringify(created.body));
+  const metadata=await api('GET',`/api/v1/devices/${buoyId}`,undefined,bearer(viewer));
+  assert.equal(metadata.code,200);
+  assert.equal(metadata.body.firmwareVersion,'1.0-test');
+  assert.equal(metadata.body.modelVersion,'rf-fixture');
   const deviceHeaders={'x-device-id':buoyId,'x-device-key':created.body.deviceKey};
   const duplicate=await api('POST','/api/v1/devices',{deviceId:buoyId,name:'Repeat'},bearer(admin));
   assert.equal(duplicate.code,409);
