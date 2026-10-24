@@ -81,6 +81,7 @@ async function livePusher(base,token,deviceId,cluster,key){
   socket.addEventListener('error',()=>reject(Error('PUSHER_SOCKET_ERROR')));
   socket.addEventListener('message',async e=>{
    let msg;try{msg=JSON.parse(String(e.data))}catch{return}
+   if(expected.includes(msg.event) && msg.channel===channel)received.add(msg.event);
    if(msg.event==='pusher:connection_established'){
     try{
      const data=typeof msg.data==='string'?JSON.parse(msg.data):msg.data;
