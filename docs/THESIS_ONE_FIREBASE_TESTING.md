@@ -7,6 +7,29 @@ There is **one real Firebase project** for the thesis. You do **not** need to pu
 1. **Local automated mode** uses the Firebase Auth + Firestore **emulator binaries** on your PC with a disposable `demo-oil-spill-monitoring-buoy-local` name. `demo-` is not a new cloud Firebase project. The suite may write synthetic PETROLEUM events because **all data stays on the PC and is destroyed after the emulator run**.
 2. **Existing Firebase read-only mode** signs into the **same Firebase project as your Android app** using a pre-existing, verified test account. It issues only GET requests to your API, plus the necessary Firebase Authentication password sign-in. It never calls write-enabled API endpoints.
 
+### One command for BOTH repositories (Windows PowerShell)
+If the API and mobile checkouts are sibling folders under the same parent directory, execute from the API folder:
+
+```powershell
+npm run verify:all
+```
+
+It runs the API emulator acceptance suite and the mobile Node/Angular validation suite, in that order. It stops with nonzero exit status if any step fails. It does **not** need Firebase staging, actual Firebase user credentials, the Android SDK or a phone for the default run.
+
+Optional real Android build/install/launch after your Android SDK and private Firebase Android configuration are ready:
+
+```powershell
+npm run verify:all -- -WithAndroid -InstallOnDevice
+```
+
+If the app lives elsewhere:
+
+```powershell
+.\\scripts\\verify-thesis.ps1 -MobilePath "D:\\Development\\oil-spill-monitoring-buoy-app"
+```
+
+Add `-ExistingFirebaseReadOnly` only after setting the five `THESIS_*` environment variables described below. This adds safe reads from the same real project; no synthetic cloud writes are performed.
+
 ### Automated API suite (recommended first)
 Requirements: Windows 11/PowerShell, Node.js 22+, npm, Java JDK 21+, internet for initial npm/Firebase emulator download. The repository needs `firebase.json`, `firestore.rules` and lockfile as committed.
 
