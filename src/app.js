@@ -19,7 +19,17 @@ const nativeOrigins=['https://localhost','capacitor://localhost'];
 const origins=new Set([...nativeOrigins,...(process.env.ALLOWED_ORIGINS??'').split(',').map(x=>x.trim()).filter(Boolean)]);
 app.use((req,res,next)=>helmet(req.path.startsWith('/swagger')?{contentSecurityPolicy:false}:{})(req,res,next));
 app.use(cors({origin:(o,cb)=>!o||origins.has(o)?cb(null,true):cb(httpError('ORIGIN_DENIED',403))}));
-app.use(express.json({limit:'24kb',strict:true}));app.use((req,res,next)=>{req.requestId=randomUUID();res.set('x-request-id',req.requestId);next()});
+app.use(express.json({limit:'24kb',strict:true}));app.use((req,res,next)=>{
+ req.requestId=randomUUID();res.set('x-request-id',req.requestId);
+ const started=Date.now();
+ res.once('finish',()=>{
+  // Deliberately exclude raw path/query, IP, body, credentials and response contents.
+  console.log(JSON.stringify({event:'api.request',timestamp:new Date().toISOString(),
+   requestId:req.requestId,method:req.method,route:req.route?.path??'unmatched',
+   status:res.statusCode,durationMs:Date.now()-started}));
+ });
+ next();
+});
 app.use(rateLimit({windowMs:60000,limit:120,standardHeaders:'draft-7',legacyHeaders:false}));
 const R=(m,path,...handlers)=>app[m](path,...handlers.map(fn=>fn.length===3?fn:asyncRoute(fn)));
 R('get','/health',h.readiness);R('get','/swagger.json',(req,res)=>res.json(swagger));app.use('/swagger',swaggerUi.serve,swaggerUi.setup(swagger));
