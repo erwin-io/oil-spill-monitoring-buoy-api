@@ -52,15 +52,16 @@ async function ephemeral(){
 }
 const firestorePort=await available(8080)?8080:await ephemeral();
 const authPort=await available(9099)?9099:await ephemeral();
+const websocketPort=await available(9150)?9150:await ephemeral();
 const configDir=join(root,'.test-output');
 mkdirSync(configDir,{recursive:true});
 const configPath=join(configDir,'firebase-simulator-'+randomUUID()+'.json');
 writeFileSync(configPath,JSON.stringify({
  firestore:{rules:join(root,'firestore.rules'),indexes:join(root,'firestore.indexes.json')},
- emulators:{firestore:{host:'127.0.0.1',port:firestorePort},
+ emulators:{firestore:{host:'127.0.0.1',port:firestorePort,websocketPort},
   auth:{host:'127.0.0.1',port:authPort},ui:{enabled:false}}
 },null,2)+'\n');
-console.log('Emulator ports:',firestorePort,'(Firestore),',authPort,'(Auth). No unrelated process terminated.');
+console.log('Emulator ports:',firestorePort,'(Firestore),',authPort,'(Auth),',websocketPort,'(WebSocket). No unrelated process terminated.');
 const project='demo-oil-spill-simulator-isolated';
 const env={
  ...process.env,
