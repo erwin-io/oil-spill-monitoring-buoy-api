@@ -78,3 +78,20 @@ jobs:
       - name: Windows Auth and Firestore emulator integration
         shell: pwsh
         run: npm run verify:local -- --skip-install
+
+  isolated-simulator-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --no-audit --no-fund
+      - name: Simulator HTTP -> Firestore -> outbox, NEVER cloud
+        run: npm run sim:pipeline
