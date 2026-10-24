@@ -84,16 +84,61 @@ export async function dispatch(req,res){requireJobAuth(req);const {db,messaging}
  const recovered=(await db.collection('notificationOutbox').where('status','==','CLAIMED').where('leaseUntil','<=',cutoff).orderBy('leaseUntil','asc').limit(limit).get()).docs;
  let handled=0;for(const d of [...candidates,...recovered].slice(0,limit)){if(await dispatchOne(db,messaging,d.ref))handled++};res.json({processed:handled,scanned:candidates.length+recovered.length});
 }
-export async function offlineSweep(req,res){requireJobAuth(req);const db=firebase().db;const age=(Number(process.env.OFFLINE_MINUTES)||60)*60000;const devices=(await db.collection('devices').where('status','==','ACTIVE').limit(1000).get()).docs;let marked=0,recovered=0;
- for(const doc of devices){const last=doc.data().lastSeenAt??doc.data().registeredAt;const offline=!!last&&new Date(last).getTime()<Date.now()-age;const ref=db.collection('alerts').doc(alertKey('OFFLINE',doc.id,'ACTIVE'));
-  await db.runTransaction(async tx=>{const existing=await tx.get(ref);if(offline&&!existing.exists){tx.create(ref,{deviceId:doc.id,type:'OFFLINE',severity:'HIGH',status:'OPEN',createdAt:iso(),episode:0});tx.create(db.collection('notificationOutbox').doc(alertKey('alert.created',doc.id,ref.id)),{type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null});marked++}
-   else if(offline&&existing.exists&&existing.data().status==='RESOLVED'){
+/**
+ * Scan an ordered, resumable page of ACTIVE buoys each tick. The previous
+ * first-1000-only scan could permanently starve later document IDs.
+ * Checkpoint only after all page mutations have committed. Reprocessing a page
+ * after a crash is safe because alert/episode state is transactional.
+ * Concurrent ticks may scan the same page; alert IDs prevent duplicate alerts.
+ */
+export async function offlineSweep(req,res){
+ requireJobAuth(req);
+ const db=firebase().db;
+ const age=(Number(process.env.OFFLINE_MINUTES)||60)*60000;
+ const configured=Number(process.env.MAX_OFFLINE_SWEEP_DEVICES);
+ const pageSize=Number.isInteger(configured)&&configured>=1?Math.min(configured,1000):1000;
+ const progressRef=db.collection('_workerState').doc('offlineSweep');
+ const state=await progressRef.get();
+ const cursor=state.exists?state.data()?.lastDeviceId:null;
+ const base=db.collection('devices').where('status','==','ACTIVE').orderBy('__name__').limit(pageSize);
+ let page=await (cursor?base.startAfter(cursor):base).get();
+ // A page at the tail may be empty after device deactivation/removal.
+ if(page.empty&&cursor)page=await base.get();
+ let marked=0,recovered=0;
+ for(const doc of page.docs){
+  const last=doc.data().lastSeenAt??doc.data().registeredAt;
+  const offline=!!last&&new Date(last).getTime()<Date.now()-age;
+  const ref=db.collection('alerts').doc(alertKey('OFFLINE',doc.id,'ACTIVE'));
+  const outcome=await db.runTransaction(async tx=>{
+   const existing=await tx.get(ref);
+   if(offline&&!existing.exists){
+    tx.create(ref,{deviceId:doc.id,type:'OFFLINE',severity:'HIGH',status:'OPEN',createdAt:iso(),episode:0});
+    tx.create(db.collection('notificationOutbox').doc(alertKey('alert.created',doc.id,ref.id)),{
+     type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},
+     status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null
+    });
+    return 'marked';
+   }
+   if(offline&&existing.exists&&existing.data().status==='RESOLVED'){
     const episode=(existing.data().episode??0)+1;
     tx.update(ref,{status:'OPEN',createdAt:iso(),resolvedAt:null,episode});
-    tx.create(db.collection('notificationOutbox').doc(alertKey('alert.created',doc.id,ref.id+'_'+episode)),{type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null});
-    marked++;
+    tx.create(db.collection('notificationOutbox').doc(alertKey('alert.created',doc.id,ref.id+'_'+episode)),{
+     type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},
+     status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null
+    });
+    return 'marked';
    }
-   else if(!offline&&existing.exists&&['OPEN','ACKNOWLEDGED'].includes(existing.data().status)){tx.update(ref,{status:'RESOLVED',resolvedAt:iso()});recovered++}
+   if(!offline&&existing.exists&&['OPEN','ACKNOWLEDGED'].includes(existing.data().status)){
+    tx.update(ref,{status:'RESOLVED',resolvedAt:iso()});
+    return 'recovered';
+   }
+   return null;
   });
- }res.json({checked:devices.length,newOffline:marked,recovered});
+  if(outcome==='marked')marked++;
+  if(outcome==='recovered')recovered++;
+ }
+ // An undersized page completes a pass. The next tick starts at the beginning.
+ const nextCursor=page.size===pageSize?page.docs.at(-1)?.id:null;
+ await progressRef.set({lastDeviceId:nextCursor??null,updatedAt:iso()},{merge:true});
+ res.json({checked:page.size,newOffline:marked,recovered,morePages:!!nextCursor});
 }

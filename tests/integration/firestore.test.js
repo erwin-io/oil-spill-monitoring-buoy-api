@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { firebase } from '../../src/firebase.js';
-import { ingestMeasurement, ingestHealth } from '../../src/handlers.js';
+import { ingestMeasurement, ingestHealth, history } from '../../src/handlers.js';
 import { pushAlert, offlineSweep } from '../../src/jobs.js';
 import { CONFIG_DEFAULT, alertKey } from '../../src/domain.js';
 
@@ -152,4 +152,82 @@ test('Firestore: reopened petroleum alarm gets new outbox ID and FCM receipts',a
    .doc(alertKey('alert.created',id,active.id+'_'+episode)).get();
   assert.equal(job.exists,true,'petroleum episode '+episode+' must have independent receipts');
  }
+});
+
+test('Firestore: resumable offline sweep visits buoy IDs beyond first page and does not replay episodes',async()=>{
+ const original=process.env.MAX_OFFLINE_SWEEP_DEVICES;
+ process.env.MAX_OFFLINE_SWEEP_DEVICES='2';
+ const prefix='zz_phase1_'+randomUUID().replaceAll('-','').slice(0,12);
+ const ids=[0,1,2].map(i=>prefix+'_'+i);
+ const progress=db.collection('_workerState').doc('offlineSweep');
+ const call=async()=>{
+  const result=response();
+  await offlineSweep({get:key=>key==='authorization'?`Bearer ${process.env.CRON_SECRET}`:undefined},result);
+  return result.payload;
+ };
+ try{
+  for(const id of ids){
+   await seedDevice(id);
+   await db.collection('devices').doc(id).update({lastSeenAt:'2026-01-01T00:00:00.000Z'});
+  }
+  // Earlier test buoy IDs sort before zz_; resume immediately before these fixtures.
+  await progress.set({lastDeviceId:'zz_phase1_',updatedAt:iso()});
+  const first=await call();
+  assert.equal(first.checked,2);
+  assert.equal(first.newOffline,2);
+  assert.equal(first.morePages,true);
+  const second=await call();
+  assert.equal(second.checked,1);
+  assert.equal(second.newOffline,1);
+  assert.equal(second.morePages,false);
+  for(const id of ids){
+   const alert=await db.collection('alerts').doc(alertKey('OFFLINE',id,'ACTIVE')).get();
+   assert.equal(alert.exists,true,`missing offline alert for ${id}`);
+   assert.equal(alert.data().episode,0);
+  }
+  await progress.set({lastDeviceId:'zz_phase1_',updatedAt:iso()});
+  const repeated=await call();
+  assert.equal(repeated.newOffline,0,'rechecking the page must not open another episode');
+ }finally{
+  if(original===undefined)delete process.env.MAX_OFFLINE_SWEEP_DEVICES;
+  else process.env.MAX_OFFLINE_SWEEP_DEVICES=original;
+  await progress.delete();
+ }
+});
+
+test('Firestore: 135-record history supports stable timestamp/cursor pages and rejects foreign cursors',async()=>{
+ const id=device();await seedDevice(id);
+ const batch=db.batch();
+ const measurements=db.collection('devices').doc(id).collection('measurements');
+ for(let i=0;i<135;i++){
+  const measuredAt=new Date(Date.now()-Math.floor(i/4)*1000).toISOString();
+  const ref=measurements.doc('history_'+String(i).padStart(3,'0'));
+  batch.set(ref,{...measure(ref.id,measuredAt),deviceId:id,receivedAt:iso(),source:'RAW_SEAWATER'});
+ }
+ await batch.commit();
+ let cursor=null;
+ const visited=new Set();
+ const pageSizes=[];
+ let previousTime=Infinity;
+ do{
+  const res=response();
+  await history({params:{deviceId:id},query:{limit:'50',...(cursor?{cursor}:{})}},res);
+  assert.equal(res.statusCode,200);
+  pageSizes.push(res.payload.items.length);
+  for(const m of res.payload.items){
+   assert.equal(m.deviceId,id);
+   const time=Date.parse(m.measuredAt);
+   assert.ok(time<=previousTime,'history must be ordered newest first across pages');
+   previousTime=time;
+   assert.ok(!visited.has(m.measurementId),'cursor traversal must not duplicate records');
+   visited.add(m.measurementId);
+  }
+  cursor=res.payload.nextCursor;
+ }while(cursor);
+ assert.deepEqual(pageSizes,[50,50,35]);
+ assert.equal(visited.size,135);
+ await assert.rejects(
+  history({params:{deviceId:id},query:{cursor:'nonexistent'}},response()),
+  {code:'INVALID_CURSOR',status:400}
+ );
 });
