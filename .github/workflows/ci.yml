@@ -91,15 +91,40 @@ jobs:
       - name: Windows repeatable telemetry lab with isolated fixtures
         shell: pwsh
         run: |
-          # First run creates private placeholder config, second exercises
-          # the complete PowerShell wrapper without external providers.
+          # Fresh-checkout run needs NO provider config when external sends
+          # are disabled. It must complete telemetry rather than just copy a template.
           npm run sim:telemetry -- -Scenario normal -NoPush -NoPusher
-          if ($LASTEXITCODE -ne 0) { throw 'Private config initialization failed' }
-          npm run sim:telemetry -- -Scenario normal -NoPush -NoPusher
-          if ($LASTEXITCODE -ne 0) { throw 'Repeatable telemetry lab failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'First-run telemetry lab failed' }
           $report = Get-Content '.test-output/telemetry-lab-report.json' -Raw | ConvertFrom-Json
           if ($report.result -ne 'PASS' -or $report.scenario -ne 'normal' -or $report.fcmSendCount -ne 0) {
             throw 'Normal fixture must PASS without FCM'
+          }
+          # Existing repo .env must be automatically resolved without printing
+          # any provider values or contacting live Pusher/FCM.
+          @(
+            'PUSHER_APP_ID=CI_DUMMY_APP'
+            'PUSHER_KEY=CI_DUMMY_KEY'
+            'PUSHER_SECRET=CI_DUMMY_SECRET'
+            'PUSHER_CLUSTER=ap1'
+          ) | Set-Content -LiteralPath '.env'
+          try {
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts/telemetry-lab.ps1 -Scenario normal -CheckConfig
+            if ($LASTEXITCODE -ne 0) { throw 'Existing API .env auto-detection failed' }
+            # Repo-local secret file should work when .env is absent; test
+            # through the real PowerShell wrapper without sending anything.
+            Remove-Item -LiteralPath '.env'
+            Copy-Item 'scripts/telemetry-lab.config.example.json' 'scripts/telemetry-lab.config.json'
+            $json = Get-Content 'scripts/telemetry-lab.config.json' -Raw | ConvertFrom-Json
+            $json.pusher.appId = 'CI_REPO_APP'
+            $json.pusher.key = 'CI_REPO_KEY'
+            $json.pusher.secret = 'CI_REPO_SECRET'
+            $json | ConvertTo-Json -Depth 8 | Set-Content 'scripts/telemetry-lab.config.json'
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts/telemetry-lab.ps1 -Scenario normal -CheckConfig
+            if ($LASTEXITCODE -ne 0) { throw 'Repo-local ignored JSON auto-detection failed' }
+            git check-ignore scripts/telemetry-lab.config.json | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Repo-local secret config MUST be gitignored' }
+          } finally {
+            Remove-Item '.env','scripts/telemetry-lab.config.json' -Force -ErrorAction SilentlyContinue
           }
 
   isolated-simulator-e2e:
