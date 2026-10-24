@@ -153,3 +153,44 @@ test('Firestore: reopened petroleum alarm gets new outbox ID and FCM receipts',a
   assert.equal(job.exists,true,'petroleum episode '+episode+' must have independent receipts');
  }
 });
+
+test('Firestore: resumable offline sweep visits buoy IDs beyond first page and does not replay episodes',async()=>{
+ const original=process.env.MAX_OFFLINE_SWEEP_DEVICES;
+ process.env.MAX_OFFLINE_SWEEP_DEVICES='2';
+ const prefix='zz_phase1_'+randomUUID().replaceAll('-','').slice(0,12);
+ const ids=[0,1,2].map(i=>prefix+'_'+i);
+ const progress=db.collection('_workerState').doc('offlineSweep');
+ const call=async()=>{
+  const result=response();
+  await offlineSweep({get:key=>key==='authorization'?`Bearer ${process.env.CRON_SECRET}`:undefined},result);
+  return result.payload;
+ };
+ try{
+  for(const id of ids){
+   await seedDevice(id);
+   await db.collection('devices').doc(id).update({lastSeenAt:'2026-01-01T00:00:00.000Z'});
+  }
+  // Earlier test buoy IDs sort before zz_; resume immediately before these fixtures.
+  await progress.set({lastDeviceId:'zz_phase1_',updatedAt:iso()});
+  const first=await call();
+  assert.equal(first.checked,2);
+  assert.equal(first.newOffline,2);
+  assert.equal(first.morePages,true);
+  const second=await call();
+  assert.equal(second.checked,1);
+  assert.equal(second.newOffline,1);
+  assert.equal(second.morePages,false);
+  for(const id of ids){
+   const alert=await db.collection('alerts').doc(alertKey('OFFLINE',id,'ACTIVE')).get();
+   assert.equal(alert.exists,true,`missing offline alert for ${id}`);
+   assert.equal(alert.data().episode,0);
+  }
+  await progress.set({lastDeviceId:'zz_phase1_',updatedAt:iso()});
+  const repeated=await call();
+  assert.equal(repeated.newOffline,0,'rechecking the page must not open another episode');
+ }finally{
+  if(original===undefined)delete process.env.MAX_OFFLINE_SWEEP_DEVICES;
+  else process.env.MAX_OFFLINE_SWEEP_DEVICES=original;
+  await progress.delete();
+ }
+});
