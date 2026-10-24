@@ -163,6 +163,12 @@ finally {
   }
   if ($null -ne $secureToken) { $secureToken.Dispose() }
   foreach ($key in $variablesToSet) {
-    [Environment]::SetEnvironmentVariable($key,$previous[$key],'Process')
+    if ($key -eq 'THESIS_FCM_TEST_TOKEN') {
+      # Never leave a phone registration token in the current terminal after a run.
+      [Environment]::SetEnvironmentVariable($key,$null,'Process')
+    }
+    else {
+      [Environment]::SetEnvironmentVariable($key,$previous[$key],'Process')
+    }
   }
 }
