@@ -262,3 +262,35 @@ test('Firestore rules emulator: client cannot read devices, write sensors, or se
  const profile=await db.collection('users').doc(user.uid).get();
  assert.equal(profile.data().role,'VIEWER','rejected privilege escalation must not persist');
 });
+
+test('Firebase emulators: Pusher private channel authorization enforces buoy scope and admin-only fleet',async()=>{
+ const tag=randomUUID().replaceAll('-','').slice(0,14);
+ const email='realtime_'+tag+'@example.test',password='Strong-Test-Password-123!';
+ const user=await auth.createUser({email,password,emailVerified:true});
+ const buoy='live_'+tag;
+ await db.collection('users').doc(user.uid).set({role:'VIEWER',status:'ACTIVE',email,displayName:'Viewer',allowedDeviceIds:[buoy]});
+ const token=await signIn(email,password);
+ process.env.PUSHER_APP_ID='emulator-not-real';
+ process.env.PUSHER_KEY='test-public-key';
+ process.env.PUSHER_SECRET='testing-private-channel-signature-secret';
+ process.env.PUSHER_CLUSTER='ap1';
+ const live=await server();
+ try{
+  const send=async(channel)=>{
+   const r=await fetch(live.url+'/api/v1/realtime/auth',{
+    method:'POST',
+    headers:{'content-type':'application/json',Authorization:'Bearer '+token},
+    body:JSON.stringify({socket_id:'123.456',channel_name:channel})
+   });
+   return {code:r.status,data:await r.json()};
+  };
+  const own=await send('private-device-'+buoy);
+  assert.equal(own.code,200,JSON.stringify(own.data));
+  assert.ok(own.data.auth?.startsWith('test-public-key:'));
+  assert.equal((await send('private-user-'+user.uid)).code,200);
+  assert.equal((await send('private-device-FOREIGN_DEVICE')).code,403);
+  assert.equal((await send('private-fleet-all')).code,403);
+  await db.collection('users').doc(user.uid).update({role:'ADMIN',allowedDeviceIds:[]});
+  assert.equal((await send('private-fleet-all')).code,200);
+ }finally{await live.close()}
+});

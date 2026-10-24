@@ -161,11 +161,78 @@ export async function userConfig(req,res){const doc=await firebase().db.collecti
 export async function putConfig(req,res){const input=validate(editConfig,req.body);const {configVersion,...changes}=input;const ref=firebase().db.collection('devices').doc(req.params.deviceId).collection('config').doc('current');let next;
  await firebase().db.runTransaction(async tx=>{const doc=await tx.get(ref);if(!doc.exists)throw httpError('NOT_FOUND',404);next={...configNext(doc.data(),configVersion,changes),updatedAt:now()};tx.set(ref,next)});res.json(next);
 }
-export async function alerts(req,res){const db=firebase().db;const ids=req.user.role==='ADMIN'?null:req.user.allowedDeviceIds??[];if(ids?.length===0)return res.json({items:[],nextCursor:null,openCount:0});
- let docs;if(ids===null){docs=(await db.collection('alerts').orderBy('createdAt','desc').limit(100).get()).docs;}else{
-  const groups=await Promise.all(ids.slice(0,100).map(id=>db.collection('alerts').where('deviceId','==',id).limit(100).get()));docs=groups.flatMap(g=>g.docs).sort((a,b)=>b.data().createdAt.localeCompare(a.data().createdAt));}
- if(req.query.status)docs=docs.filter(d=>d.data().status===req.query.status);
- res.json({items:docs.slice(0,maxPage(req.query.limit)).map(clean),nextCursor:null,openCount:docs.filter(d=>d.data().status==='OPEN').length});
+// Alert paging uses snapshot cursors (the last visible document ID), so ties
+// on createdAt remain stable across pages without offset-based duplicates.
+export async function alerts(req,res){
+ const db=firebase().db;
+ const allowed=req.user.role==='ADMIN'?null:[...new Set(req.user.allowedDeviceIds??[])];
+ if(allowed?.length===0)return res.json({items:[],nextCursor:null,openCount:0});
+ const status=req.query.status;
+ if(status!==undefined&&!['OPEN','ACKNOWLEDGED','RESOLVED'].includes(status))throw httpError('INVALID_ALERT_STATUS',422);
+ const limit=maxPage(req.query.limit),cursorId=req.query.cursor;
+ let cursor=null;
+ if(cursorId!==undefined){
+  if(typeof cursorId!=='string'||!/^[A-Za-z0-9_-]{1,500}$/.test(cursorId))throw httpError('INVALID_CURSOR',400);
+  cursor=await db.collection('alerts').doc(cursorId).get();
+  if(!cursor.exists||!canRead(req.user,cursor.data().deviceId)||status&&cursor.data().status!==status)throw httpError('INVALID_CURSOR',400);
+ }
+ const makeQuery=(deviceId)=>{
+  let q=db.collection('alerts');
+  if(deviceId!==null)q=q.where('deviceId','==',deviceId);
+  if(status)q=q.where('status','==',status);
+  q=q.orderBy('createdAt','desc').limit(limit+1);
+  return cursor?q.startAfter(cursor):q;
+ };
+ // Fetch at most one page PER authorized buoy; merge globally in deterministic
+ // createdAt/ID order. Unlike the previous 100-record cap, a scoped device with
+ // old alerts can still appear even when unrelated buoys have recent alerts.
+ const chunks=allowed===null?[null]:allowed;
+ const pages=[];
+ for(let i=0;i<chunks.length;i+=10){
+  const batch=await Promise.all(chunks.slice(i,i+10).map(id=>makeQuery(id).get()));
+  for(const result of batch)pages.push(...result.docs);
+ }
+ const items=pages.sort((a,b)=>b.data().createdAt.localeCompare(a.data().createdAt)||b.id.localeCompare(a.id)).slice(0,limit);
+ const extra=pages.length>limit;
+ const names=[...new Set(items.map(d=>d.data().deviceId))];
+ const nameDocs=await Promise.all(names.map(id=>db.collection('devices').doc(id).get()));
+ const deviceNames=new Map(nameDocs.filter(d=>d.exists).map(d=>[d.id,d.data().name]));
+ const readDocs=await db.collection('users').doc(req.user.uid).collection('readAlerts').get();
+ const readEpisodes=new Map(readDocs.docs.map(d=>[d.id,d.data().episode??0]));
+ const output=items.map(d=>({...clean(d),deviceName:deviceNames.get(d.data().deviceId)??d.data().deviceId,
+  unread:readEpisodes.get(d.id)!==(d.data().episode??0)}));
+ // Open alerts are an independent count; never derive this from a partial page.
+ const countQuery=(id)=>{
+  let q=db.collection('alerts').where('status','==','OPEN');
+  if(id!==null)q=q.where('deviceId','==',id);
+  return q.count().get();
+ };
+ let openCount=0;
+ for(let i=0;i<chunks.length;i+=10){
+  const counts=await Promise.all(chunks.slice(i,i+10).map(countQuery));
+  openCount+=counts.reduce((n,c)=>n+c.data().count,0);
+ }
+ // Count OPEN alerts not yet seen in their *current episode*. A stable alert
+ // document ID may be reopened; old read receipts must not hide new incidents.
+ let readOpenCount=0;
+ for(let i=0;i<readDocs.docs.length;i+=20){
+  const batch=await Promise.all(readDocs.docs.slice(i,i+20).map(d=>db.collection('alerts').doc(d.id).get()));
+  for(let n=0;n<batch.length;n++){
+   const alert=batch[n],receipt=readDocs.docs[i+n];
+   if(alert.exists&&alert.data().status==='OPEN'&&canRead(req.user,alert.data().deviceId)&&
+      (receipt.data().episode??0)===(alert.data().episode??0))readOpenCount++;
+  }
+ }
+ res.json({items:output,nextCursor:extra?items.at(-1)?.id:null,openCount,
+  unreadCount:Math.max(0,openCount-readOpenCount)});
+}
+export async function markAlertRead(req,res){
+ const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId),alert=await ref.get();
+ if(!alert.exists)throw httpError('NOT_FOUND',404);
+ if(!canRead(req.user,alert.data().deviceId))throw httpError('FORBIDDEN',403);
+ await db.collection('users').doc(req.user.uid).collection('readAlerts').doc(alert.id)
+  .set({alertId:alert.id,deviceId:alert.data().deviceId,episode:alert.data().episode??0,readAt:now()},{merge:true});
+ res.json({alertId:alert.id,unread:false});
 }
 export async function alertDetail(req,res){const doc=await firebase().db.collection('alerts').doc(req.params.alertId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);if(!canRead(req.user,doc.data().deviceId))throw httpError('FORBIDDEN',403);res.json(clean(doc))}
 export async function acknowledge(req,res){const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId);let alert;

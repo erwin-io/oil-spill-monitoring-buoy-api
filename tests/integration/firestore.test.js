@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { firebase } from '../../src/firebase.js';
-import { ingestMeasurement, ingestHealth, history } from '../../src/handlers.js';
+import { ingestMeasurement, ingestHealth, history, alerts, markAlertRead } from '../../src/handlers.js';
 import { pushAlert, offlineSweep } from '../../src/jobs.js';
 import { CONFIG_DEFAULT, alertKey } from '../../src/domain.js';
+import {distributedRateLimit} from '../../src/security.js';
 
 if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_PROJECT_ID?.startsWith('demo-')){
  throw new Error('Integration tests MUST use a demo- Firebase project with FIRESTORE_EMULATOR_HOST');
@@ -230,4 +231,115 @@ test('Firestore: 135-record history supports stable timestamp/cursor pages and r
   history({params:{deviceId:id},query:{cursor:'nonexistent'}},response()),
   {code:'INVALID_CURSOR',status:400}
  );
+});
+
+
+test('Firestore: scoped alerts paginate past 100, filter status, count all open and persist per-user read flags',async()=>{
+ const id=device(),foreign=device();await seedDevice(id);await seedDevice(foreign);
+ const uid='viewer_'+randomUUID().replaceAll('-','').slice(0,12);
+ await db.collection('users').doc(uid).set({role:'VIEWER',status:'ACTIVE',allowedDeviceIds:[id]});
+ const batch=db.batch();
+ for(let i=0;i<112;i++){
+  const key='paging_'+id+'_'+String(i).padStart(3,'0');
+  batch.set(db.collection('alerts').doc(key),{
+   deviceId:id,type:'PETROLEUM',severity:'CRITICAL',
+   status:i<105?'OPEN':'RESOLVED',
+   createdAt:new Date(Date.parse('2026-10-24T00:00:00Z')+i*1000).toISOString()
+  });
+ }
+ batch.set(db.collection('alerts').doc('foreign_'+foreign),{
+  deviceId:foreign,type:'PETROLEUM',severity:'CRITICAL',
+  status:'OPEN',createdAt:'2026-10-24T00:00:00Z'
+ });
+ await batch.commit();
+ const req=(cursor,limit=40,status='OPEN')=>({
+  user:{uid,role:'VIEWER',allowedDeviceIds:[id]},
+  query:{limit:String(limit),status,...(cursor?{cursor}:{})}
+ });
+ const visited=[];
+ let cursor=null,firstId;
+ do{
+  const result=response();await alerts(req(cursor),result);
+  assert.equal(result.payload.openCount,105);
+  if(visited.length===0)assert.equal(result.payload.unreadCount,105);
+  if(firstId===undefined)firstId=result.payload.items[0].id;
+  for(const a of result.payload.items){
+   assert.equal(a.deviceId,id);
+   assert.equal(a.status,'OPEN');
+   assert.equal(a.deviceName,'Emulator buoy');
+   assert.equal(a.unread,true);
+   visited.push(a.id);
+  }
+  cursor=result.payload.nextCursor;
+ }while(cursor);
+ assert.equal(visited.length,105);
+ assert.equal(new Set(visited).size,105);
+ const read=response();
+ await markAlertRead({user:{uid,role:'VIEWER',allowedDeviceIds:[id]},params:{alertId:firstId}},read);
+ assert.equal(read.payload.unread,false);
+ const refreshed=response();await alerts(req(),refreshed);
+ assert.equal(refreshed.payload.items[0].unread,false);
+ assert.equal(refreshed.payload.unreadCount,104);
+ await db.collection('alerts').doc(firstId).update({episode:1});
+ const reopened=response();await alerts(req(),reopened);
+ assert.equal(reopened.payload.items[0].unread,true,'new alert episode must be unread');
+ assert.equal(reopened.payload.unreadCount,105);
+
+ await assert.rejects(
+  markAlertRead({user:{uid,role:'VIEWER',allowedDeviceIds:[id]},params:{alertId:'foreign_'+foreign}},response()),
+  {status:403,code:'FORBIDDEN'}
+ );
+ await assert.rejects(alerts(req('foreign_'+foreign),response()),{status:400,code:'INVALID_CURSOR'});
+ await assert.rejects(alerts({...req(),query:{status:'INVALID'}},response()),{status:422,code:'INVALID_ALERT_STATUS'});
+});
+
+test('Firestore: FCM retires invalid tokens and safely retries transient recipients without resending successes',async()=>{
+ const id=device();await seedDevice(id);
+ const uid='u_'+randomUUID().replaceAll('-','').slice(0,16);
+ await db.collection('users').doc(uid).set({role:'VIEWER',status:'ACTIVE',allowedDeviceIds:[id]});
+ const alertId=alertKey('PETROLEUM',id,'deliver');
+ await db.collection('alerts').doc(alertId).set({deviceId:id,type:'PETROLEUM',status:'OPEN',createdAt:iso()});
+ const tokens=[
+  {key:'a_'+randomUUID().replaceAll('-',''),val:'good-fcm-token-validation-1'},
+  {key:'b_'+randomUUID().replaceAll('-',''),val:'invalid-fcm-token-validation'},
+  {key:'c_'+randomUUID().replaceAll('-',''),val:'transient-fcm-token-validation'}
+ ];
+ await Promise.all(tokens.map(t=>db.collection('notificationTokens').doc(t.key).set({uid,active:true,token:t.val})));
+ const ref=db.collection('notificationOutbox').doc(alertKey('alert.created',id,alertId));
+ await ref.set({deviceId:id,type:'alert.created',status:'CLAIMED'});
+ let calls=0;
+ const messenger={sendEachForMulticast:async ({tokens:incoming})=>{
+  calls++;
+  return{responses:incoming.map(t=>{
+   if(t==='good-fcm-token-validation-1')return {success:true};
+   if(t==='invalid-fcm-token-validation')return {success:false,error:{code:'messaging/registration-token-not-registered'}};
+   if(calls===1)return {success:false,error:{code:'messaging/unavailable'}};
+   return{success:true};
+  })};
+ }};
+ const job={deviceId:id,payload:{alertId},type:'alert.created'};
+ await assert.rejects(pushAlert(db,messenger,job,ref),{code:'messaging/unavailable'});
+ assert.equal((await db.collection('notificationTokens').doc(tokens[1].key).get()).data().active,false);
+ assert.equal((await ref.collection('fcmReceipts').doc(tokens[0].key).get()).data().status,'SENT');
+ await pushAlert(db,messenger,job,ref);
+ assert.equal(calls,2);
+ assert.equal((await ref.collection('fcmReceipts').doc(tokens[2].key).get()).data().status,'SENT');
+});
+
+
+test('Firestore: distributed per-minute telemetry quota is shared, denies at limit and never stores raw device secret',async()=>{
+ const id=device(),limiter=distributedRateLimit('thesis_emulator_quota',2);
+ const req={deviceId:id,ip:'203.0.113.5',get:()=>'',method:'POST'};
+ const headers={};const res={set:(key,val)=>{headers[key]=val;return res;}};
+ const attempt=()=>new Promise(resolve=>{void limiter(req,res,(err)=>resolve(err??null));});
+ assert.equal(await attempt(),null);
+ assert.equal(await attempt(),null);
+ const error=await attempt();
+ assert.equal(error.code,'RATE_LIMITED');
+ assert.equal(error.status,429);
+ assert.ok(Number(headers['Retry-After'])>=1);
+ const records=await db.collection('_rateLimitWindows').where('kind','==','thesis_emulator_quota').get();
+ const target=records.docs.find(d=>d.data().count===2);
+ assert.ok(target,'quota counter should be persisted in Firestore');
+ assert.equal(JSON.stringify(target.data()).includes(id),false,'raw identifiers must not be persisted');
 });
