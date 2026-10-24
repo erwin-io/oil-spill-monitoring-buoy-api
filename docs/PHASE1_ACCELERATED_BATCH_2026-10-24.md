@@ -2,7 +2,7 @@
 **Date:** 2026-10-24 (Asia/Manila)  
 **Status:** Development PRs open. NOT production acceptance or 15 newly Completed items.  
 **Authoritative tracker:** [Official Development Checklist](https://docs.google.com/spreadsheets/d/1u7q7yetXcge09qaLFywK7s6wSRKjLJcKP-R6pi8t1pQ/edit), tab `Development Checklist`, IDs 1–103.  
-**Baseline:** 13 Completed / 25 In Progress / 0 Blocked / 65 Not Started.
+**Starting baseline:** 13 Completed / 25 In Progress / 0 Blocked / 65 Not Started. **Verified original tracker after this batch:** 16 Completed / 22 In Progress / 0 Blocked / 65 Not Started. Newly accepted: A-06, A-09, B-15 (software/Firebase emulator only).
 
 ## 1. Immutable architectural decisions
 - ESP32-S3 + A7670C HTTPS → Express/Vercel → Cloud Firestore → private Pusher hints + FCM → Ionic/Angular/Capacitor.
@@ -14,38 +14,40 @@
 ## 2. Work actually performed
 ### API (review-only PR)
 - Base main verified `4a69f5f2b061be387735b2435c555ed54228dceb`.
-- Branch `fix/phase1-offline-sweep-cursor`; code/test SHA before this handoff: `7beef0c6fd2a5598a29889bf367698d57f034e47`.
+- Branch `fix/phase1-offline-sweep-cursor`; validated API code/test SHA before final handoff update: `0d83c23056db691d7a48da335e3caf4f2052547f`.
 - [API PR #3](https://github.com/erwin-io/oil-spill-monitoring-buoy-api/pull/3).
 - `src/jobs.js`: replaces hard first-1000 ACTIVE-buoy scan with deterministic, paginated Firestore cursor stored at `_workerState/offlineSweep`. Controlled by `MAX_OFFLINE_SWEEP_DEVICES` (default 1000, max 1000). Cursor is committed after the full page; re-scans retain transactional incident-idempotency. Reports `morePages` in addition to existing response fields. No API route changes.
 - `tests/integration/firestore.test.js`: an isolated emulator regression checks two-page offline sweeps and duplicate episode prevention.
 - `tests/integration/auth-http.test.js`: one emulator HTTP acceptance scenario checks admin provisioning, duplicate rejection, scoped access, empty/history cursor/latest state, petroleum alert creation, viewer denial, operator acknowledgment and recovery. It does not test real hardware or Android display.
-- Earlier code/test head `fc002278d9e3` passed [API PR CI](https://github.com/erwin-io/oil-spill-monitoring-buoy-api/actions/runs/40055024354). **The later HTTP acceptance test commit needs exact-head CI readback before merge.**
+- Expanded emulator tests include 135-document sorted/cursor pagination, invalid cursor, raw-water metadata, role/scope HTTP flows and authenticated Firestore rules-denial attempts. [API CI run 40055575875](https://github.com/erwin-io/oil-spill-monitoring-buoy-api/actions/runs/40055575875) **passed** on exact functional head `0d83c230`. No local non-emulator, production or hardware claims.
 
 ### Mobile (review-only PR)
 - Base main at branch start `31f67f77a49f7e92fc672969b3f54c70583eccf1`; main was observed later advancing to `f5964c8cbf7930d861fc9cc0904870806f32ce15` (Android release-related files). Review changed-base diff before merge.
-- Branch `fix/phase1-push-session-race`, head `561beb09236355bcf41475c1c811240d5aa2c854`.
+- Branch `fix/phase1-push-session-race`, functional head `fd06cf1c054cd661f4918b3e33b8776ed7317bee`.
 - [Mobile PR #1](https://github.com/erwin-io/oil-spill-monitoring-buoy-app/pull/1).
 - `src/app/core/push.service.ts`: adds a session generation guard; sequences token callback registration; ignores stale callbacks and notification tap navigation after logout; retires old tokens after refresh; revokes tokens registered while logout was in flight.
-- `tests/push-platform.test.mjs`: adds native callback simulation covering refresh, duplicate registration, logout/registration race and stale callback.
-- [Mobile PR CI](https://github.com/erwin-io/oil-spill-monitoring-buoy-app/actions/runs/40055101034) **passed** on exact mobile PR head. This is Node/Angular CI, not a Gradle APK or real-device FCM delivery proof.
-- No production Firebase/Pusher/FCM configuration, live accounts, Google Sheets status or deployed Vercel code was modified by the source PRs.
+- `tests/push-platform.test.mjs`: simulated token refresh, duplicate registration, logout/registration race and stale callback.
+- `src/app/core/auth.service.ts` / `tests/auth-session.test.mjs`: protects account-switching profile and rejects stale bootstrap results after logout or user change.
+- `src/app/core/realtime.service.ts` / `src/app/pages/dashboard.page.ts` / `tests/realtime-reconnect.test.mjs`: 60-second REST polling only while Pusher disconnected, reconciliation after connection, private-device/user event subscriptions, guard against stale callbacks, stop on leaving dashboard and resubscribe on device-set changes.
+- [Mobile PR CI](https://github.com/erwin-io/oil-spill-monitoring-buoy-app/actions/runs/40055713744) **passed** on exact mobile functional head `fd06cf1c`. This is Node/Angular CI, not a Gradle APK or real-device FCM delivery proof.
+- No production Firebase/Pusher/FCM configuration, live accounts or deployed Vercel code was modified by the source PRs. The authorized ORIGINAL Google Sheet was updated: three software/emulator-accepted IDs are now Completed with dated notes; the other 22 original in-progress items retained their status.
 
 ## 3. Checklist review matrix
-All 25 remain **In Progress** unless separately reclassified in the original checklist with test evidence. No artificial completion increments.
+The original Google Sheet was re-read after 25 dated note updates and three evidence-based status promotions: **A-06, A-09, B-15 Completed**; **22 In Progress**. No further artificial completion increments.
 | ID | Current code/evidence | Gate still required |
 |---|---|---|
-| A-06 | Existing admin lifecycle + new HTTP emulator scenario | CI readback, complete role assignment administrative workflow and staging scope acceptance |
-| A-09 | New HTTP emulator cursor/latest/empty checks | Large-data pagination and mobile populated history acceptance |
+| A-06 | **Completed (emulator):** admin creation, credential rotation, enable/disable, duplicate prevention, role-scope isolation, firmware/model metadata; CI 40055575875 | Real buoy deployment is separate D workstream; cloud staging validation remains an operational gate |
+| A-09 | **Completed (emulator):** 135-record 50+50+35 cursor pages, monotonic timestamp ordering, invalid cursor rejection, scope denial, latest/metadata/stale replay; CI 40055575875 | Populated Android history remains C-30 |
 | A-10 | New HTTP test for oil alert ACK/recovery | Full severity, status filtering/pagination and health lifecycle |
 | A-12 | Helmet, CORS, Zod, correlation ID, per-instance rate limiter | Distributed enforcement, redacted logging/abuse tests |
 | B-13 | Single project + emulator setup documented | Separate live dev/staging/prod and secret rotation governance |
 | B-14 | Core Firestore collections + emulator API tests | Full data-model/integrity and retention testing |
-| B-15 | Firestore rules deny all direct client access; API Admin only | Authenticated Firestore rules emulator regression on deployed rules |
+| B-15 | **Completed (emulator):** signed-in client GET and PATCH denied 403, role self-elevation denied, trusted Admin SDK still reads, no role mutation; CI 40055575875 | Production rule deployment governance is B-13; no live rules changed here |
 | B-20 | Petroleum/health/offline persisted and tested; new HTTP ack test | Full lifecycle, stable alert episode history and live scope evidence |
 | B-21 | Private Pusher server auth and mobile subscription code | Authorized live event publish/subscription, reconnect, fallback |
 | B-22 | FCM server outbox + native token code; mobile session hardening PR | Real Android token registration and foreground/background/tap delivery |
 | B-23 | Durable outbox, receipts, retry/backoff, offline sweep hardening PR | Concurrency/lease retry integration, real provider failure behavior |
-| C-25 | Firebase auth, route guards, logout seen on Android | Revoked/expired session and account switching integration test |
+| C-25 | Account-switching profile cache and late bootstrap race fixed; new test passed in mobile CI 40055713744 | Expired/revoked Firebase token, restored session and Android account-switching acceptance |
 | C-26 | Dashboard API/empty state UI | Populated, stale, offline and error behavior on device |
 | C-27 | Buoy list/search/filter UI | Authorized test buoy populated/scoped list on Android, fleet pagination |
 | C-28 | Detail screen exists | Verified populated latest health/spectral/firmware model |
@@ -56,7 +58,7 @@ All 25 remain **In Progress** unless separately reclassified in the original che
 | C-33 | Capacitor FCM plugin and push session race hardening | Foreground/background/terminated delivery and deep-link behavior on Android |
 | C-34 | Device health page exists | Populated API-driven health fields + Android fault display |
 | C-35 | Config read/edit, server CAS conflict handling | Client input validation, permission UX and Android optimistic-concurrency run |
-| C-36 | Pusher connection/fallback code exists | Reconnect and REST reconciliation tests |
+| C-36 | 60s REST fallback, reconnect reconciliation and stale-callback/unit service tests passed in mobile CI 40055713744 | Real Pusher outage/recovery on Android remains unverified |
 | C-37 | Some Ionic error/empty states present | Consistent offline, stale, retry, auth-error user testing |
 | C-38 | Android APK previously installed + sign-in/logout witnessed | Exact-head Gradle native build, Firebase init, FCM and lifecycle on device |
 
@@ -105,4 +107,4 @@ Build Android through Android Studio/Gradle after installing the appropriate And
 - The local workspace had no network route to github.com for a full clone. CI on PR head is the execution/test authority for the connector-created commits.
 - Neither PR proves native FCM delivery or UV hydrocarbon detection. User account previously showed 0 assigned buoys.
 
-**Status rule:** Keep the original tracker at 13 Completed / 25 In Progress / 0 Blocked / 65 Not Started until justified evidence and source-of-truth re-read establish a change.
+**Source-of-truth status after verified readback:** 16 Completed / 22 In Progress / 0 Blocked / 65 Not Started (16%). Exactly **3 newly accepted** out of the requested **15**, with 12 further newly accepted items still required to reach the target. Do not infer any field acceptance. Both PRs remain unmerged pending owner review.
