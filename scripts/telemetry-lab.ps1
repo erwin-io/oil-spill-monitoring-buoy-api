@@ -60,7 +60,61 @@ function Read-LocalJson([string]$path) {
 function Read-DotEnv([string]$path,[hashtable]$output) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
   foreach ($line in (Get-Content -LiteralPath $path)) {
-    if ($line -notmatch '^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)
+    if ($line -notmatch '^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') { continue }
+    $key = $Matches[1]
+    $value = $Matches[2].Trim()
+    if ($value.Length -ge 2 -and (($value[0] -eq '"' -and $value[$value.Length-1] -eq '"') -or
+      ($value[0] -eq "'" -and $value[$value.Length-1] -eq "'"))) {
+      $value = $value.Substring(1,$value.Length-2)
+    } else {
+      $value = ($value -replace '\s+#.*$', '').Trim()
+    }
+    $output[$key] = $value
+  }
+}
+$dotenv = @{}
+Read-DotEnv (Join-Path $apiRoot '.env') $dotenv
+Read-DotEnv (Join-Path $apiRoot '.env.local') $dotenv
+$repoConfig = Read-LocalJson $repoConfigPath
+$legacyConfig = Read-LocalJson $legacyConfigPath
+function Get-ConfigValue([string]$environmentKey,[string]$section,[string]$field) {
+  $candidates = @(
+    @{value=[Environment]::GetEnvironmentVariable($environmentKey,'Process'); source='PowerShell environment'}
+  )
+  if ($null -ne $repoConfig) {
+    $sectionValue = $repoConfig.PSObject.Properties[$section]
+    if ($null -ne $sectionValue) {
+      $fieldValue = $sectionValue.Value.PSObject.Properties[$field]
+      if ($null -ne $fieldValue) {
+        $candidates += @{value=[string]$fieldValue.Value; source='repo-local config'}
+      }
+    }
+  }
+  if ($dotenv.ContainsKey($environmentKey)) {
+    $candidates += @{value=[string]$dotenv[$environmentKey]; source='API .env'}
+  }
+  if ($null -ne $legacyConfig) {
+    $sectionValue = $legacyConfig.PSObject.Properties[$section]
+    if ($null -ne $sectionValue) {
+      $fieldValue = $sectionValue.Value.PSObject.Properties[$field]
+      if ($null -ne $fieldValue) {
+        $candidates += @{value=[string]$fieldValue.Value; source='existing home config'}
+      }
+    }
+  }
+  foreach ($candidate in $candidates) {
+    $value = [string]$candidate.value
+    if ($field -eq 'serviceAccountJson' -and $value -eq 'AUTO') { continue }
+    if (-not (Is-Placeholder $value)) {
+      return $candidate
+    }
+  }
+  return $null
+}
+$secureToken = $null
+$ptr = [IntPtr]::Zero
+try {
+  $fixture = Get-Content -LiteralPath $scenarioFile -Raw | ConvertFrom-Json
   $plan = $fixture.scenarios.$Scenario
   if ($null -eq $plan) { throw "Scenario not defined in telemetry-lab.scenarios.json: $Scenario" }
   if (@($plan.steps).Count -lt 1) { throw "Scenario has no telemetry steps." }
