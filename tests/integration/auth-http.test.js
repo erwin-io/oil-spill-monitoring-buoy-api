@@ -171,6 +171,7 @@ test('Firebase emulators: provisioning, scoped history and oil alert acknowledge
  const timestamps=[3,2,1].map(m=>new Date(Date.now()-m*60000).toISOString());
  const sample=(key,at,classification='NORMAL')=>({
   measurementId:key,measuredAt:at,classification,confidence:.95,totalFluorescence:12,
+  batteryPercent:75,signalStrengthDbm:-73,cellStatus:'CLEAN',firmwareVersion:'1.0-test',modelVersion:'rf-fixture',
   spectral:{f415:1,f445:2,f480:3,f515:4,f555:5,f590:6}
  });
  try{
@@ -197,6 +198,10 @@ test('Firebase emulators: provisioning, scoped history and oil alert acknowledge
   const page1=await api('GET',`/api/v1/devices/${buoyId}/measurements?limit=1`,undefined,bearer(viewer));
   assert.equal(page1.code,200);
   assert.equal(page1.body.items[0].measurementId,'oil');
+  assert.equal(page1.body.items[0].batteryPercent,75);
+  assert.equal(page1.body.items[0].signalStrengthDbm,-73);
+  assert.equal(page1.body.items[0].cellStatus,'CLEAN');
+  assert.equal(page1.body.items[0].firmwareVersion,'1.0-test');
   assert.ok(page1.body.nextCursor);
   const page2=await api('GET',`/api/v1/devices/${buoyId}/measurements?limit=1&cursor=${encodeURIComponent(page1.body.nextCursor)}`,undefined,bearer(viewer));
   assert.equal(page2.code,200);
