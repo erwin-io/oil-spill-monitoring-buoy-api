@@ -33,10 +33,10 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci --no-audit --no-fund
-      - name: Firestore emulator transactional integration
+      - name: One-command isolated local acceptance (Node + Firebase emulators)
         env:
           FIREBASE_PROJECT_ID: demo-oil-spill-monitoring-buoy-ci
           GCLOUD_PROJECT: demo-oil-spill-monitoring-buoy-ci
           GOOGLE_CLOUD_PROJECT: demo-oil-spill-monitoring-buoy-ci
           CI: 'true'
-        run: npx --yes firebase-tools@15.9.0 emulators:exec --project demo-oil-spill-monitoring-buoy-ci --only firestore,auth "timeout 240s node --test --test-force-exit tests/integration/*.test.js"
+        run: npm run verify:local -- --skip-install
