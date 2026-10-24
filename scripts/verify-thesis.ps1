@@ -65,20 +65,14 @@ if ($ExistingFirebaseReadOnly) {
     Invoke-ProjectStep -Folder $apiRoot -Title 'Existing Firebase read-only smoke' -Args @('run','verify:existing-firebase')
 }
 
-$appArgs = @('run','verify:local')
-if ($WithAndroid -and $InstallOnDevice) {
-    $appArgs = @('run','verify:android')
-} elseif($WithAndroid) {
-    $appArgs += @('--','--android')
-}
-if ($SkipInstall) {
-    if ($appArgs[-1] -ne '--') { $appArgs += '--' }
-    $appArgs += '--skip-install'
-}
-if ($Screenshot) {
-    if ($appArgs[-1] -ne '--') { $appArgs += '--' }
-    $appArgs += '--screenshot'
-}
+$appScript = 'verify:local'
+if ($WithAndroid -and $InstallOnDevice) { $appScript = 'verify:android' }
+$appArgs = @('run',$appScript)
+$appFlags = @()
+if ($WithAndroid -and -not $InstallOnDevice) { $appFlags += '--android' }
+if ($SkipInstall) { $appFlags += '--skip-install' }
+if ($Screenshot) { $appFlags += '--screenshot' }
+if ($appFlags.Count -gt 0) { $appArgs += '--'; $appArgs += $appFlags }
 Invoke-ProjectStep -Folder $resolvedMobile -Title 'Mobile unit, charts and Android validation' -Args $appArgs
 
 Write-Host ''
