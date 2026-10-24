@@ -10,6 +10,9 @@
  * Live provider sends additionally require THESIS_PROVIDER_CONFIRM.
  */
 import {spawnSync} from 'node:child_process';
+import {createServer} from 'node:net';
+import {mkdirSync,writeFileSync,unlinkSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 
@@ -31,6 +34,33 @@ if(flags.includes('--with-fcm')){
   if(!process.env[key])throw Error('Missing '+key);
  }
 }
+// A previous Java Firestore emulator occasionally survives an exec shutdown
+// on Windows. Never kill unrelated programs: choose unused loopback ports.
+async function available(port){
+ return await new Promise(resolve=>{
+  const s=createServer();
+  s.once('error',()=>resolve(false));
+  s.listen(port,'127.0.0.1',()=>s.close(()=>resolve(true)));
+ });
+}
+async function ephemeral(){
+ return await new Promise((resolve,reject)=>{
+  const s=createServer();
+  s.once('error',reject);
+  s.listen(0,'127.0.0.1',()=>{const port=s.address().port;s.close(()=>resolve(port));});
+ });
+}
+const firestorePort=await available(8080)?8080:await ephemeral();
+const authPort=await available(9099)?9099:await ephemeral();
+const configDir=join(root,'.test-output');
+mkdirSync(configDir,{recursive:true});
+const configPath=join(configDir,'firebase-simulator-'+randomUUID()+'.json');
+writeFileSync(configPath,JSON.stringify({
+ firestore:{rules:join(root,'firestore.rules'),indexes:join(root,'firestore.indexes.json')},
+ emulators:{firestore:{host:'127.0.0.1',port:firestorePort},
+  auth:{host:'127.0.0.1',port:authPort},ui:{enabled:false}}
+},null,2)+'\n');
+console.log('Emulator ports:',firestorePort,'(Firestore),',authPort,'(Auth). No unrelated process terminated.');
 const project='demo-oil-spill-simulator-isolated';
 const env={
  ...process.env,
@@ -52,12 +82,18 @@ delete env.FIRESTORE_EMULATOR_HOST;
 delete env.FIREBASE_AUTH_EMULATOR_HOST;
 const cmd='node scripts/simulator-pipeline.mjs'+(flags.length?' '+flags.join(' '):'');
 const windows=process.platform==='win32';
-const args=['--yes','firebase-tools@15.9.0','emulators:exec','--project',project,'--only','firestore,auth',
+const args=['--yes','firebase-tools@15.9.0','emulators:exec','--config',
+ windows?'"'+configPath+'"':configPath,'--project',project,'--only','firestore,auth',
  windows?'"'+cmd+'"':cmd];
 console.log('ISOLATED THESIS BUOY PIPELINE');
 console.log('Synthetic Firestore writes: emulator ONLY.');
 console.log('External Pusher:',flags.includes('--with-pusher')?'explicitly enabled':'disabled');
 console.log('External FCM:',flags.includes('--with-fcm')?'one test token explicitly enabled':'disabled');
-const result=spawnSync(windows?'npx.cmd':'npx',args,{cwd:root,env,stdio:'inherit',shell:windows});
-if(result.error)console.error(result.error.message);
-process.exitCode=result.status??1;
+let result;
+try {
+ result=spawnSync(windows?'npx.cmd':'npx',args,{cwd:root,env,stdio:'inherit',shell:windows});
+ if(result.error)console.error(result.error.message);
+ process.exitCode=result.status??1;
+} finally {
+ try{unlinkSync(configPath)}catch(e){console.warn('Temporary emulator config cleanup failed:',e.message)}
+}
