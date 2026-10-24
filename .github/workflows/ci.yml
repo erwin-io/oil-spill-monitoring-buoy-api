@@ -62,7 +62,7 @@ jobs:
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-thesis.ps1
           if ($LASTEXITCODE -ne 0) { throw "PowerShell orchestrator failed: $LASTEXITCODE" }
           $calls = @(Get-Content (Join-Path $env:RUNNER_TEMP 'npm-args.log'))
-          if ($calls.Count -ne 2 -or @($calls | Where-Object { $_ -notmatch '^\s*run\s+verify:local\s* }).Count -gt 0) {
+          if ($calls.Count -ne 2 -or @($calls | Where-Object { $_ -notmatch '^\s*run\s+verify:local\s*$' }).Count -gt 0) {
             throw "Unexpected npm commands: $($calls -join '; ')"
           }
       - uses: actions/setup-node@v4
