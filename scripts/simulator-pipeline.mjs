@@ -19,10 +19,13 @@ import {initializeApp,cert,deleteApp} from 'firebase-admin/app';
 import {getMessaging} from 'firebase-admin/messaging';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
-const flags=new Set(process.argv.slice(2));
+const argv=process.argv.slice(2);
+const flags=new Set(argv.filter(a=>a==='--with-pusher'||a==='--with-fcm'));
+const scenarioName=process.env.TELEMETRY_LAB_SCENARIO||null;
 const allow=new Set(['--with-pusher','--with-fcm']);
 export function checkSandbox(env, options=flags) {
  for(const f of options)if(!allow.has(f))throw Error('UNSUPPORTED_OPTION: '+f);
+ for(const f of argv)if(!allow.has(f))throw Error('UNSUPPORTED_OPTION: '+f);
  if(!env.FIREBASE_PROJECT_ID?.startsWith('demo-'))throw Error('CLOUD_FIREBASE_WRITE_PROTECTION: expected demo- project');
  for(const name of ['FIRESTORE_EMULATOR_HOST','FIREBASE_AUTH_EMULATOR_HOST']){
   if(!/^(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/.test(env[name]??''))throw Error('CLOUD_FIREBASE_WRITE_PROTECTION: '+name+' must be localhost');
@@ -49,6 +52,27 @@ export function sampleMeasurement(id,classification='NORMAL'){
   spectral:{f415:8,f445:14,f480:21,f515:11,f555:7,f590:4}};
 }
 const safeResult=(ok,details)=>({status:ok?'PASS':'FAIL',...details});
+
+/** Validate editable fixtures before creating any emulator user/device. */
+export function readTelemetryPlan(name, fixture){
+ if(!fixture?.scenarios || typeof fixture.scenarios!=='object')throw Error('TELEMETRY_SCENARIOS_INVALID');
+ const plan=fixture.scenarios[name];
+ if(!plan)throw Error('UNKNOWN_TELEMETRY_SCENARIO:'+name);
+ if(!Array.isArray(plan.steps)||plan.steps.length<1||plan.steps.length>16)throw Error('SCENARIO_STEPS_INVALID');
+ if(!Array.isArray(plan.expectedAlerts)||plan.expectedAlerts.length>12)throw Error('SCENARIO_ALERTS_INVALID');
+ const types=new Set(['PETROLEUM','LOW_BATTERY','SENSOR_FAULT','CELL_MAINTENANCE_REQUIRED']);
+ if(plan.expectedAlerts.some(t=>!types.has(t)))throw Error('SCENARIO_ALERT_TYPE_INVALID');
+ const validKinds=new Set(['measurement','health']);
+ const validClasses=new Set(['NORMAL','PETROLEUM','INTERFERENCE','INCONCLUSIVE']);
+ for(const step of plan.steps){
+  if(!step||!validKinds.has(step.kind))throw Error('SCENARIO_STEP_KIND_INVALID');
+  if(step.kind==='measurement'&&!validClasses.has(step.classification))throw Error('SCENARIO_MEASUREMENT_CLASS_INVALID');
+  if(step.kind==='health' && step.batteryPercent===undefined && step.sensor===undefined && step.cellStatus===undefined)
+   throw Error('SCENARIO_HEALTH_FIELDS_MISSING');
+ }
+ return plan;
+}
+
 function parseJSON(text){try{return JSON.parse(text)}catch{return {message:text.slice(0,180)}}}
 async function request(base,method,path,body,headers={}){
  const response=await fetch(base+path,{method,headers:{'content-type':'application/json',...headers},
@@ -70,8 +94,7 @@ async function localServer(app){
  return{base:'http://127.0.0.1:'+server.address().port,close:()=>new Promise(r=>server.close(r))};
 }
 /** Real Pusher websocket with auth from the same emulator-backed API. */
-async function livePusher(base,token,deviceId,cluster,key){
- const expected=['measurement.created','health.updated','alert.created'];
+async function livePusher(base,token,deviceId,cluster,key,expected=['measurement.created','health.updated','alert.created']){
  const received=new Set();
  const channel='private-device-'+deviceId;
  const socket=new WebSocket('wss://ws-'+cluster+'.pusher.com/app/'+encodeURIComponent(key)+'?protocol=7&client=thesis-smoke&version=1.0');
@@ -113,6 +136,7 @@ async function run(){
  const {pushAlert}=await import('../src/jobs.js');
  const {auth,db}=firebase();
  const suffix=marker(),deviceId='sim_'+suffix;
+ const plan=scenarioName?readTelemetryPlan(scenarioName,JSON.parse(readFileSync(join(root,'scripts','telemetry-lab.scenarios.json'),'utf8'))):null;
  const password='Local-Simulator-Only!234';
  const adminEmail='admin_'+suffix+'@example.test',viewerEmail='viewer_'+suffix+'@example.test';
  const admin=await auth.createUser({email:adminEmail,password,emailVerified:true});
@@ -125,7 +149,7 @@ async function run(){
  const report={mode:'local-emulator-synthetic-buoy',timestamp:iso(),deviceId,
   dataTarget:'FIRESTORE_AND_AUTH_EMULATORS_ONLY',cloudFirestoreWrites:0,
   simulatedTelemetry:true,realPusher:false,realFCMAccepted:false,androidNotificationReceived:'NOT_MEASURED',
-  checks:[]};
+  checks:[],scenario:scenarioName??'legacy',pusherEvents:[],fcmSendCount:0,alertTypes:[]};
  let pusher,externalApp;
  try{
   const a={Authorization:'Bearer '+adminToken},v={Authorization:'Bearer '+viewerToken};
@@ -142,9 +166,42 @@ async function run(){
    report.checks.push(safeResult(true,{step:'Test token registered only in emulator'}));
   }
   if(flags.has('--with-pusher')){
-   pusher=await livePusher(local.base,viewerToken,deviceId,process.env.PUSHER_CLUSTER,process.env.PUSHER_KEY);
+   const expected=plan?[...(plan.steps.some(s=>s.kind==='measurement')?['measurement.created']:[]),...(plan.steps.some(s=>s.kind==='health')?['health.updated']:[]),...(plan.expectedAlerts.length?['alert.created']:[])]:undefined;
+   pusher=await livePusher(local.base,viewerToken,deviceId,process.env.PUSHER_CLUSTER,process.env.PUSHER_KEY,expected);
    report.checks.push(safeResult(true,{step:'Real Pusher subscribed to scoped private channel'}));
   }
+  if(plan){
+   for(let n=0;n<plan.steps.length;n++){
+    const step=plan.steps[n];
+    const rest=Object.fromEntries(Object.entries(step).filter(([key])=>key!=='kind'));
+    const url=step.kind==='measurement'?'/api/v1/device/measurements':'/api/v1/device/health';
+    const payload=step.kind==='measurement'
+      ?{...sampleMeasurement('sim_measure_'+suffix+'_'+n,step.classification),...rest,
+        measurementId:'sim_measure_'+suffix+'_'+n,measuredAt:iso(),
+        qualityFlags:['SIMULATED_DO_NOT_USE_FOR_SCIENCE'],modelVersion:'no-real-sensor'}
+      :{batteryPercent:85,charging:false,signalStrengthDbm:-72,sensor:'OK',cellStatus:'CLEAN',
+        pendingUploads:0,...rest,healthId:'sim_health_'+suffix+'_'+n,measuredAt:iso()};
+    const accepted=await request(local.base,'POST',url,payload,deviceHeaders);
+    if(accepted.status!==201)throw Error('TELEMETRY_REJECTED:stage_'+n);
+    report.checks.push(safeResult(true,{step:'Accepted simulator '+step.kind+' stage '+(n+1),classification:step.classification||null}));
+    // Source telemetry timestamps are generated at send time, not hardcoded.
+    await new Promise(resolve=>setTimeout(resolve,8));
+   }
+   const alertSnapshot=await db.collection('alerts').where('deviceId','==',deviceId).get();
+   const found=[...new Set(alertSnapshot.docs.map(d=>d.data().type))].sort();
+   const expected=[...new Set(plan.expectedAlerts)].sort();
+   if(JSON.stringify(found)!==JSON.stringify(expected))throw Error('ALERT_CONTRACT_MISMATCH: expected '+expected.join(',')+' got '+found.join(','));
+   report.alertTypes=found;
+   const outbox=await db.collection('notificationOutbox').where('deviceId','==',deviceId).get();
+   const newAlerts=outbox.docs.filter(d=>d.data().type==='alert.created');
+   if(newAlerts.length!==plan.expectedAlerts.length)throw Error('ALERT_OUTBOX_MISMATCH');
+   report.checks.push(safeResult(true,{step:'Alert policy matches scenario',alerts:found,pushJobs:newAlerts.length}));
+   if(plan.steps.some(s=>s.kind==='measurement')){
+    const latest=await request(local.base,'GET','/api/v1/devices/'+deviceId+'/measurements/latest',undefined,v);
+    const lastMeasurement=[...plan.steps].reverse().find(s=>s.kind==='measurement');
+    if(latest.body.classification!==lastMeasurement.classification)throw Error('AUTHORITATIVE_LATEST_MISMATCH');
+   }
+  }else{
   const m1=await request(local.base,'POST','/api/v1/device/measurements',sampleMeasurement('normal_'+suffix),deviceHeaders);
   const m2=await request(local.base,'POST','/api/v1/device/measurements',sampleMeasurement('oil_'+suffix,'PETROLEUM'),deviceHeaders);
   if(m1.status!==201||m2.status!==201)throw Error('Measurement API did not accept simulator samples');
@@ -158,17 +215,25 @@ async function run(){
   const inbox=await request(local.base,'GET','/api/v1/alerts',undefined,v);
   if(!inbox.body.items.some(x=>x.deviceId===deviceId&&x.type==='PETROLEUM'))throw Error('Emulator oil alert missing');
   report.checks.push(safeResult(true,{step:'Normal, simulated oil and sensor health HTTP uploads created authoritative emulator data and alerts'}));
+  }
   const previousSecret=process.env.CRON_SECRET;
   process.env.CRON_SECRET='sim-cron-'+suffix+'-secret-0123456789';
   const dispatched=await request(local.base,'GET','/api/v1/jobs/dispatch',undefined,{authorization:'Bearer '+process.env.CRON_SECRET});
   process.env.CRON_SECRET=previousSecret;
-  report.checks.push(safeResult(dispatched.body.processed>=4,{step:'Real outbox dispatch code executed',processed:dispatched.body.processed}));
-  if(dispatched.body.processed<4)throw Error('Outbox did not dispatch all expected events');
+  const minimum=plan?plan.steps.length+plan.expectedAlerts.length:4;
+  report.checks.push(safeResult(dispatched.body.processed>=minimum,{step:'Real outbox dispatch code executed',processed:dispatched.body.processed,expectedAtLeast:minimum}));
+  if(dispatched.body.processed<minimum)throw Error('OUTBOX_MISSING_EVENTS');
   if(pusher){
    const received=await pusher.wait();
-   const refreshed=await request(local.base,'GET','/api/v1/devices/'+deviceId+'/measurements/latest',undefined,v);
-   if(refreshed.body.classification!=='PETROLEUM')throw Error('Realtime callback REST reconciliation failed');
+   const refreshed=plan&&!plan.steps.some(s=>s.kind==='measurement')
+    ?await request(local.base,'GET','/api/v1/devices/'+deviceId,undefined,v)
+    :await request(local.base,'GET','/api/v1/devices/'+deviceId+'/measurements/latest',undefined,v);
+   if(plan){
+    const recent=[...plan.steps].reverse().find(s=>s.kind==='measurement');
+    if(recent && refreshed.body.classification!==recent.classification)throw Error('Realtime REST reconciliation failed');
+   } else if(refreshed.body.classification!=='PETROLEUM')throw Error('Realtime callback REST reconciliation failed');
    report.realPusher=true;
+   report.pusherEvents=received;
    report.checks.push(safeResult(true,{step:'Real Pusher delivered private events; API REST refetch matches latest data',events:received}));
   }
   if(flags.has('--with-fcm')){
@@ -176,16 +241,22 @@ async function run(){
    if(serviceJSON.project_id!==process.env.THESIS_FCM_PROJECT_ID)throw Error('FCM service account/project mismatch');
    externalApp=initializeApp({credential:cert(serviceJSON),projectId:serviceJSON.project_id},'thesis-real-fcm-'+suffix);
    const outbox=await db.collection('notificationOutbox').where('type','==','alert.created').get();
-   const entry=outbox.docs.find(d=>d.data().deviceId===deviceId&&d.data().payload?.type==='PETROLEUM');
-   if(!entry)throw Error('No emulator petroleum notification job');
-   // This uses the exact FCM sender implementation used by /jobs/dispatch.
-   // Only the Firebase Messaging transport targets the real project; DB and
-   // receipts remain in the emulator. The device token is never logged.
-   await pushAlert(db,getMessaging(externalApp),entry.data(),entry.ref);
-   const receipts=await entry.ref.collection('fcmReceipts').get();
-   if(!receipts.docs.some(d=>d.data().status==='SENT'))throw Error('FCM provider did not accept test push');
-   report.realFCMAccepted=true;
-   report.checks.push(safeResult(true,{step:'Real FCM provider accepted one test notification; Android receipt/tap still requires owner observation'}));
+   const selected=outbox.docs.filter(d=>d.data().deviceId===deviceId &&
+     (!plan || plan.expectedAlerts.includes(d.data().payload?.type)));
+   if(!plan&&!selected.some(d=>d.data().payload?.type==='PETROLEUM'))
+    throw Error('No emulator petroleum notification job');
+   // Only send real FCM messages for actual alert.created jobs produced by the API.
+   // NORMAL, INTERFERENCE and below-threshold PETROLEUM NEVER trigger an FCM send.
+   // Firebase Firestore data and per-token receipts remain emulator-only.
+   for(const entry of selected){
+    await pushAlert(db,getMessaging(externalApp),entry.data(),entry.ref);
+    const receipts=await entry.ref.collection('fcmReceipts').get();
+    if(!receipts.docs.some(d=>d.data().status==='SENT'))throw Error('FCM_PROVIDER_NOT_ACCEPTED:'+entry.data().payload?.type);
+    report.fcmSendCount++;
+    report.checks.push(safeResult(true,{step:'Real FCM provider accepted simulated alert',type:entry.data().payload?.type}));
+   }
+   if(plan && selected.length!==plan.expectedAlerts.length)throw Error('FCM_ELIGIBLE_ALERT_COUNT_MISMATCH');
+   report.realFCMAccepted=selected.length>0;
   }
   report.result='PASS';
  }finally{
@@ -204,9 +275,9 @@ if(main){
   process.exitCode=1;
  }
  const dir=join(root,'.test-output');mkdirSync(dir,{recursive:true});
- const out=join(dir,'simulator-pipeline-report.json');
+ const out=join(dir,scenarioName?'telemetry-lab-report.json':'simulator-pipeline-report.json');
  writeFileSync(out,JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify({result:report.result,providerPusher:report.realPusher??false,
-  providerFCMAccepted:report.realFCMAccepted??false,androidReceipt:'NOT_MEASURED',report:out,
+  providerFCMAccepted:report.realFCMAccepted??false,alertTypes:report.alertTypes??[],fcmSendCount:report.fcmSendCount??0,pusherEvents:report.pusherEvents??[],androidReceipt:'NOT_MEASURED',report:out,
   ...(report.error?{error:report.error}:{})},null,2));
 }
