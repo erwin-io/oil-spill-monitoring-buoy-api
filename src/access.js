@@ -10,7 +10,7 @@ export async function accessLevel(db,user,id,tx=null){
   if(!user?.uid)return 'NONE';
   const viewerRef=ref.collection('viewers').doc(user.uid);
   const viewer=await (tx?tx.get(viewerRef):viewerRef.get());
-  return viewer.exists&&viewer.data().status==='ACTIVE'?'VIEWER':'NONE';
+  return viewer.exists&&viewer.data().status==='ACTIVE'&&viewer.data().invitedBy===device.data().ownerUid?'VIEWER':'NONE';
  }
  if(process.env.P2_STRICT_OWNERSHIP==='true')return 'NONE';
  return canRead(user,id)?user.role==='ADMIN'?'LEGACY_ADMIN':'LEGACY_VIEWER':'NONE';

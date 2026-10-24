@@ -79,5 +79,9 @@ test('strict ownership gates all reads, owner writes, Viewer invitation and futu
   assert.equal((await call('POST','/api/v1/realtime/auth',{channel_name:'private-fleet-all',socket_id:'123.456'},human(admin))).status,403);
   sent=[];await pushAlert(db,messaging,{...job,payload:{alertId}},db.collection('notificationOutbox').doc('second_job_'+randomUUID().slice(0,12)));
   assert.deepEqual(sent,['token-owner-test'],'revoked Viewer is ineligible for future FCM sends');
+  await db.collection('devices').doc(id).collection('viewers').doc(viewer.uid).set({uid:viewer.uid,status:'ACTIVE',invitedBy:owner.uid});
+  await db.collection('users').doc(viewer.uid).collection('sharedDevices').doc(id).set({deviceId:id});
+  await db.collection('devices').doc(id).update({ownerUid:outsider.uid});
+  assert.equal((await call('GET',path,undefined,human(viewer))).status,403,'former owner shares do not survive ownership changes');
  }finally{await new Promise(resolve=>server.close(resolve))}
 });
