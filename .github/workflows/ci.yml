@@ -62,6 +62,19 @@ jobs:
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-thesis.ps1
           if ($LASTEXITCODE -ne 0) { throw "PowerShell orchestrator failed: $LASTEXITCODE" }
           $calls = @(Get-Content (Join-Path $env:RUNNER_TEMP 'npm-args.log'))
-          if ($calls.Count -ne 2 -or @($calls | Where-Object { $_ -notmatch '^\s*run\s+verify:local\s*$' }).Count -gt 0) {
+          if ($calls.Count -ne 2 -or @($calls | Where-Object { $_ -notmatch '^\s*run\s+verify:local\s* }).Count -gt 0) {
             throw "Unexpected npm commands: $($calls -join '; ')"
           }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies for real Windows Firebase emulator test
+        run: npm ci --no-audit --no-fund
+      - name: Windows Auth and Firestore emulator integration
+        shell: pwsh
+        run: npm run verify:local -- --skip-install
