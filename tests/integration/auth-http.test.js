@@ -268,6 +268,7 @@ test('Firebase emulators: Pusher private channel authorization enforces buoy sco
  const email='realtime_'+tag+'@example.test',password='Strong-Test-Password-123!';
  const user=await auth.createUser({email,password,emailVerified:true});
  const buoy='live_'+tag;
+ await db.collection('devices').doc(buoy).set({name:'Realtime scope fixture',status:'ACTIVE'});
  await db.collection('users').doc(user.uid).set({role:'VIEWER',status:'ACTIVE',email,displayName:'Viewer',allowedDeviceIds:[buoy]});
  const token=await signIn(email,password);
  process.env.PUSHER_APP_ID='emulator-not-real';

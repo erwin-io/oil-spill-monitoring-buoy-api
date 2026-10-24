@@ -8,7 +8,7 @@ import swagger from './swagger.js';
 import {randomUUID} from 'node:crypto';
 import * as h from './handlers.js';
 import {dispatch,offlineSweep} from './jobs.js';
-import {userAuth,deviceAuth,requireRole,deviceScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
+import {userAuth,deviceAuth,requireRole,deviceScope,deviceOwnerScope,deviceOperatorScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
 import {httpError} from './domain.js';
 const app=express();app.disable('x-powered-by');app.set('trust proxy',1);
 // Capacitor 7's default Android WebView origin is https://localhost
@@ -43,12 +43,16 @@ R('post',p+'/device/pairing-challenges',deviceAuth,distributedRateLimit('pair_st
 R('post',p+'/devices/:deviceId/claims',userAuth,distributedRateLimit('claim_request',10),h.requestClaim);
 R('get',p+'/devices/:deviceId/claims/:challengeId',userAuth,h.pairingStatus);
 R('post',p+'/device/pairing-confirmations',deviceAuth,distributedRateLimit('pair_confirm',12),h.confirmPairing);
+R('post',p+'/devices/:deviceId/invitations',userAuth,deviceOwnerScope,distributedRateLimit('invite',10),h.inviteViewer);
+R('get',p+'/invitations',userAuth,h.myInvitations);
+R('post',p+'/devices/:deviceId/invitations/accept',userAuth,distributedRateLimit('invite_accept',15),h.acceptInvitation);
+R('delete',p+'/devices/:deviceId/viewers/:viewerUid',userAuth,deviceOwnerScope,distributedRateLimit('invite',10),h.revokeViewer);
 R('post',p+'/device/measurements',deviceAuth,distributedRateLimit('telemetry',240),h.ingestMeasurement);R('post',p+'/device/health',deviceAuth,distributedRateLimit('telemetry',240),h.ingestHealth);
 R('get',p+'/devices/:deviceId/measurements',userAuth,deviceScope,h.history);R('get',p+'/devices/:deviceId/measurements/latest',userAuth,deviceScope,h.latest);
 R('get',p+'/devices/:deviceId/health',userAuth,deviceScope,h.healthHistory);
 R('get',p+'/device/config',deviceAuth,h.deviceConfig);R('get',p+'/devices/:deviceId/config',userAuth,deviceScope,h.userConfig);
-R('put',p+'/devices/:deviceId/config',userAuth,requireRole('OPERATOR','ADMIN'),deviceScope,distributedRateLimit('user_change',60),h.putConfig);
-R('get',p+'/alerts',userAuth,h.alerts);R('get',p+'/alerts/:alertId',userAuth,h.alertDetail);R('post',p+'/alerts/:alertId/read',userAuth,distributedRateLimit('user_change',60),h.markAlertRead);R('patch',p+'/alerts/:alertId/acknowledge',userAuth,requireRole('OPERATOR','ADMIN'),distributedRateLimit('user_change',60),h.acknowledge);
+R('put',p+'/devices/:deviceId/config',userAuth,deviceOperatorScope,distributedRateLimit('user_change',60),h.putConfig);
+R('get',p+'/alerts',userAuth,h.alerts);R('get',p+'/alerts/:alertId',userAuth,h.alertDetail);R('post',p+'/alerts/:alertId/read',userAuth,distributedRateLimit('user_change',60),h.markAlertRead);R('patch',p+'/alerts/:alertId/acknowledge',userAuth,distributedRateLimit('user_change',60),h.acknowledge);
 R('post',p+'/notifications/register-device',userAuth,distributedRateLimit('push_register',30),h.registerPush);R('delete',p+'/notifications/unregister-device',userAuth,distributedRateLimit('push_register',30),h.unregisterPush);
 R('post',p+'/realtime/auth',userAuth,distributedRateLimit('realtime_auth',120),h.pusherAuth);
 R('get',p+'/jobs/dispatch',dispatch);R('get',p+'/jobs/offline',offlineSweep);

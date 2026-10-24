@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {Timestamp} from 'firebase-admin/firestore';
 import {firebase} from './firebase.js';
 import {keyHash,keysEqual,canRead,httpError} from './domain.js';
+import {requireAccess} from './access.js';
 export const asyncRoute=f=>(req,res,next)=>Promise.resolve().then(()=>f(req,res)).catch(next);
 export async function userAuth(req,res,next){try{
  const match=/^Bearer (\S+)$/i.exec(req.get('authorization')??'');if(!match)throw httpError('AUTH_REQUIRED',401);
@@ -19,7 +20,9 @@ export async function deviceAuth(req,res,next){try{
  req.deviceId=deviceId;next();
  }catch(e){next(e)}}
 export const requireRole=(...roles)=>(req,res,next)=>roles.includes(req.user?.role)?next():next(httpError('FORBIDDEN',403));
-export const deviceScope=(req,res,next)=>canRead(req.user,req.params.deviceId)?next():next(httpError('FORBIDDEN',403));
+export const deviceScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId).then(()=>next(),next);
+export const deviceOwnerScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId,'OWNER').then(()=>next(),next);
+export const deviceOperatorScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId,'OPERATE').then(()=>next(),next);
 
 // Shared Firestore minute windows enforce admission across Vercel instances.
 // Scope: state-changing entrypoints; no raw IPs, tokens or secrets are stored.

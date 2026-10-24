@@ -1,5 +1,6 @@
 import {firebase} from './firebase.js';
 import {canRead,retryDelay,alertKey,httpError} from './domain.js';
+import {accessLevel} from './access.js';
 const iso=()=>new Date().toISOString();
 function requireJobAuth(req){const secret=process.env.CRON_SECRET;const presented=req.get('authorization');if(!secret||secret.length<24||presented!==`Bearer ${secret}`)throw httpError('JOB_UNAUTHORIZED',401)}
 /**
@@ -29,7 +30,7 @@ export async function pushAlert(db,messaging,job,ref){
     userCache.set(uid,user.exists?{...user.data(),uid}:null);
    }
    const user=userCache.get(uid);
-   if(!user||user.status!=='ACTIVE'||!canRead(user,job.deviceId))continue;
+   if(!user||user.status!=='ACTIVE'||await accessLevel(db,user,job.deviceId)==='NONE')continue;
    const receipt=ref.collection('fcmReceipts').doc(token.id);
    if((await receipt.get()).exists)continue;
    eligible.push({token,receipt});
