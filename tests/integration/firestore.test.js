@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { firebase } from '../../src/firebase.js';
 import { ingestMeasurement, ingestHealth, history, alerts, markAlertRead } from '../../src/handlers.js';
-import { pushAlert, offlineSweep } from '../../src/jobs.js';
+import { pushAlert, offlineSweep, pruneRateLimitWindows } from '../../src/jobs.js';
 import { CONFIG_DEFAULT, alertKey } from '../../src/domain.js';
 import {distributedRateLimit} from '../../src/security.js';
 
@@ -342,4 +342,18 @@ test('Firestore: distributed per-minute telemetry quota is shared, denies at lim
  const target=records.docs.find(d=>d.data().count===2);
  assert.ok(target,'quota counter should be persisted in Firestore');
  assert.equal(JSON.stringify(target.data()).includes(id),false,'raw identifiers must not be persisted');
+});
+
+
+test('Firestore: rate-limit windows are pruned in bounded batches without paid TTL',async()=>{
+ const suffix=randomUUID().replaceAll('-','').slice(0,18);
+ const collection=db.collection('_rateLimitWindows');
+ const past=new Date(Date.now()-5*60_000),future=new Date(Date.now()+2*60*60_000);
+ const ids=[1,2,3].map(i=>'sim_prune_'+suffix+'_'+i);
+ await Promise.all(ids.map((id,i)=>collection.doc(id).set({kind:'sim_prune',expiresAt:i<2?past:future,count:1})));
+ assert.equal(await pruneRateLimitWindows(db,1),1);
+ assert.equal(await pruneRateLimitWindows(db,1),1);
+ assert.equal((await collection.doc(ids[2]).get()).exists,true,'unexpired rate window must survive');
+ assert.equal((await collection.doc(ids[0]).get()).exists,false);
+ assert.equal((await collection.doc(ids[1]).get()).exists,false);
 });
