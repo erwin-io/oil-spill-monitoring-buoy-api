@@ -37,7 +37,7 @@ If `/health` returns HTTP 503, inspect your Firebase service account project and
 - `GET /devices/:deviceId/measurements`, `/measurements/latest`, `/health`
 - `GET /device/config` (buoy authentication)
 - `GET|PUT /devices/:deviceId/config` (human account; PUT role restricted)
-- `GET /alerts`, `GET /alerts/:alertId`, `PATCH /alerts/:alertId/acknowledge`
+- `GET /alerts?status=OPEN&limit=30&cursor=...` (scoped cursor paging, `openCount`, buoy names, per-user unread state), `GET /alerts/:alertId`, `POST /alerts/:alertId/read`, `PATCH /alerts/:alertId/acknowledge`
 - `POST /notifications/register-device`, `DELETE /notifications/unregister-device`
 - `POST /realtime/auth`
 - `GET /jobs/dispatch`, `GET /jobs/offline` (secret-protected scheduled invocations)
@@ -50,13 +50,13 @@ Measurements are immutable under `devices/{deviceId}/measurements/{measurementId
 
 - `vercel.json` defaults to two **daily** cron tasks to avoid rejecting a Vercel Hobby deployment. This does **not** satisfy a 60-minute offline-monitoring SLA; for production use a Pro plan with `docs/vercel-pro-crons.json` cadence or an approved external scheduler with authenticated requests. See current Vercel cron limits.
 - The repository includes a committed `package-lock.json`. Use `npm ci` for reproducible local and CI installations. CI also runs the Firebase emulator suite without accessing live project data.
-- In-memory `express-rate-limit` is per serverless instance, so use a shared external limiter for strong production rate-limit guarantees.
+- In-memory `express-rate-limit` is per serverless instance, so Phase 2 adds a shared Firestore transaction-based limiter for critical state-changing operations; ordinary GET requests still use per-instance express-rate-limit. Set a Firestore TTL on `_rateLimitWindows.expiresAt` to clean up counters.
 - Firestore page reads, token processing, offline sweeps, Pusher/FCM duplicate-dispatch semantics and index coverage require load/integration verification. Historical measurements must not be used as scientific proof of oil contamination.
 - Swagger currently documents the route catalogue, but detailed request and response schemas are incomplete. Treat OpenAPI coverage as **not accepted** until expanded.
-- Never publish test petroleum alerts into scientific production history. Use a separate Firebase staging project.
+- The thesis uses ONE existing Firebase cloud project plus disposable local Auth/Firestore emulators. Never publish synthetic petroleum alerts to the real cloud. For live connectivity checks, use the existing-Firebase read-only smoke runner.
 
 ## Expected Firestore collections
 
-`users`, `devices/{id}/measurements`, `devices/{id}/health`, `devices/{id}/config/current`, `alerts`, `notificationTokens`, `deviceCredentials`, `notificationOutbox`.
+`users/{uid}/readAlerts/{alertId}`, `devices/{id}/measurements`, `devices/{id}/health`, `devices/{id}/config/current`, `alerts`, `notificationTokens`, `deviceCredentials`, `notificationOutbox`, `_rateLimitWindows` (set TTL on `expiresAt`).
 
 Client Firestore rules deny all operational access, requiring the Node API. Firebase Admin SDK bypasses Firestore rules; authorization must remain enforced on the Express side.
