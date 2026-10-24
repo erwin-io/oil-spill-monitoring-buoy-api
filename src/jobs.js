@@ -78,11 +78,26 @@ async function dispatchOne(db,messaging,ref){let job;const lease=new Date(Date.n
  catch(e){const permanent=job.attempts>=5;await ref.update({status:permanent?'FAILED':'PENDING',lastError:String(e.code??'DELIVERY_FAILED').slice(0,90),nextAttemptAt:new Date(Date.now()+retryDelay(job.attempts)).toISOString(),leaseUntil:null});}
  return true;
 }
+/**
+ * No-cost alternative to Firestore's billable TTL deletes.
+ * Called only by the existing CRON_SECRET-protected dispatcher; bounded
+ * and idempotent, and never scans live sensor measurements.
+ */
+export async function pruneRateLimitWindows(db,limit=100){
+ const page=await db.collection('_rateLimitWindows')
+  .where('expiresAt','<=',new Date()).orderBy('expiresAt','asc')
+  .limit(Math.min(200,Math.max(1,limit))).get();
+ if(page.empty)return 0;
+ const batch=db.batch();
+ for(const doc of page.docs)batch.delete(doc.ref);
+ await batch.commit();
+ return page.size;
+}
 export async function dispatch(req,res){requireJobAuth(req);const {db,messaging}=firebase();const limit=Math.min(50,Math.max(1,Number(process.env.MAX_WORKER_JOBS)||20));
  const cutoff=iso();
  const candidates=(await db.collection('notificationOutbox').where('status','==','PENDING').where('nextAttemptAt','<=',cutoff).orderBy('nextAttemptAt','asc').limit(limit).get()).docs;
  const recovered=(await db.collection('notificationOutbox').where('status','==','CLAIMED').where('leaseUntil','<=',cutoff).orderBy('leaseUntil','asc').limit(limit).get()).docs;
- let handled=0;for(const d of [...candidates,...recovered].slice(0,limit)){if(await dispatchOne(db,messaging,d.ref))handled++};res.json({processed:handled,scanned:candidates.length+recovered.length});
+ let handled=0;for(const d of [...candidates,...recovered].slice(0,limit)){if(await dispatchOne(db,messaging,d.ref))handled++};const prunedRateWindows=await pruneRateLimitWindows(db);res.json({processed:handled,scanned:candidates.length+recovered.length,prunedRateWindows});
 }
 /**
  * Scan an ordered, resumable page of ACTIVE buoys each tick. The previous
