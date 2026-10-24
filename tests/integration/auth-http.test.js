@@ -223,3 +223,33 @@ test('Firebase emulators: provisioning, scoped history and oil alert acknowledge
   await live.close();
  }
 });
+
+test('Firestore rules emulator: client cannot read devices, write sensors, or self-elevate roles',async()=>{
+ const tag=randomUUID().replaceAll('-','').slice(0,12);
+ const email=`rules_${tag}@example.test`,password='Strong-Test-Password-123!';
+ const user=await auth.createUser({email,password,emailVerified:true});
+ await db.collection('users').doc(user.uid).set({
+  email,displayName:'Rules test viewer',role:'VIEWER',status:'ACTIVE',allowedDeviceIds:['rules_'+tag],
+ });
+ const id='rules_'+tag;
+ await db.collection('devices').doc(id).set({name:'Firestore security test',status:'ACTIVE'});
+ const token=await signIn(email,password);
+ const prefix=`http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+ const asUser={authorization:`Bearer ${token}`,'content-type':'application/json'};
+ const deniedRead=await fetch(`${prefix}/devices/${id}`,{headers:asUser});
+ assert.equal(deniedRead.status,403,'even scoped viewer must use the protected API');
+ const deniedWrite=await fetch(`${prefix}/devices/${id}`,{
+  method:'PATCH',headers:asUser,
+  body:JSON.stringify({fields:{latestClassification:{stringValue:'PETROLEUM'}}}),
+ });
+ assert.equal(deniedWrite.status,403,'mobile clients must never write sensor classifications');
+ const privilege=await fetch(`${prefix}/users/${user.uid}`,{
+  method:'PATCH',headers:asUser,
+  body:JSON.stringify({fields:{role:{stringValue:'ADMIN'}}}),
+ });
+ assert.equal(privilege.status,403,'client self-promotion must be refused by rules');
+ const serverRead=await db.collection('devices').doc(id).get();
+ assert.equal(serverRead.exists,true,'trusted Admin SDK still has server-side access');
+ const profile=await db.collection('users').doc(user.uid).get();
+ assert.equal(profile.data().role,'VIEWER','rejected privilege escalation must not persist');
+});
