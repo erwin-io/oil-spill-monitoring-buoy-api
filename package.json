@@ -14,7 +14,8 @@
     "verify:local": "node scripts/verify-local.mjs",
     "verify:existing-firebase": "node scripts/verify-existing-firebase.mjs",
     "verify:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-thesis.ps1",
-    "sim:pipeline": "node scripts/simulator-launch.mjs"
+    "sim:pipeline": "node scripts/simulator-launch.mjs",
+    "sim:telemetry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/telemetry-lab.ps1"
   },
   "dependencies": {
     "cors": "^2.8.5",
