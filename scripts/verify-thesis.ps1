@@ -36,12 +36,23 @@ if ($Screenshot -and -not $InstallOnDevice) {
 }
 
 function Invoke-ProjectStep {
-    param([string]$Folder,[string]$Title,[string[]]$Args)
+    param(
+        [Parameter(Mandatory=$true)][string]$Folder,
+        [Parameter(Mandatory=$true)][string]$Title,
+        [Parameter(Mandatory=$true)][ValidateNotNullOrEmpty()][string[]]$NpmArguments
+    )
+    # $Args is an automatic PowerShell variable and must never be used
+    # as a named parameter for script arguments. Explicitly reject a
+    # missing/empty command instead of silently running bare npm help.
+    if ($NpmArguments.Count -lt 2 -or $NpmArguments[0] -ne 'run') {
+        throw "Invalid npm script invocation for $Title"
+    }
     Push-Location $Folder
     try {
         Write-Host ''
         Write-Host "=== $Title ===" -ForegroundColor Cyan
-        & npm.cmd @Args
+        Write-Host ("Running: npm " + ($NpmArguments -join ' '))
+        & npm.cmd @NpmArguments
         if ($LASTEXITCODE -ne 0) {
             throw "$Title failed with exit code $LASTEXITCODE"
         }
@@ -53,7 +64,7 @@ function Invoke-ProjectStep {
 
 $apiArgs = @('run','verify:local')
 if ($SkipInstall) { $apiArgs += @('--','--skip-install') }
-Invoke-ProjectStep -Folder $apiRoot -Title 'API emulator and HTTP integration acceptance' -Args $apiArgs
+Invoke-ProjectStep -Folder $apiRoot -Title 'API emulator and HTTP integration acceptance' -NpmArguments $apiArgs
 
 if ($ExistingFirebaseReadOnly) {
     $need = @('THESIS_API_BASE_URL','THESIS_FIREBASE_PROJECT_ID','THESIS_FIREBASE_WEB_API_KEY','THESIS_TEST_EMAIL','THESIS_TEST_PASSWORD')
@@ -62,7 +73,7 @@ if ($ExistingFirebaseReadOnly) {
             throw "Missing $name. Configure the existing-project READ-ONLY smoke variables before retrying."
         }
     }
-    Invoke-ProjectStep -Folder $apiRoot -Title 'Existing Firebase read-only smoke' -Args @('run','verify:existing-firebase')
+    Invoke-ProjectStep -Folder $apiRoot -Title 'Existing Firebase read-only smoke' -NpmArguments @('run','verify:existing-firebase')
 }
 
 $appScript = 'verify:local'
@@ -73,7 +84,7 @@ if ($WithAndroid -and -not $InstallOnDevice) { $appFlags += '--android' }
 if ($SkipInstall) { $appFlags += '--skip-install' }
 if ($Screenshot) { $appFlags += '--screenshot' }
 if ($appFlags.Count -gt 0) { $appArgs += '--'; $appArgs += $appFlags }
-Invoke-ProjectStep -Folder $resolvedMobile -Title 'Mobile unit, charts and Android validation' -Args $appArgs
+Invoke-ProjectStep -Folder $resolvedMobile -Title 'Mobile unit, charts and Android validation' -NpmArguments $appArgs
 
 Write-Host ''
 Write-Host 'PASS: all requested automated validation steps completed.' -ForegroundColor Green
