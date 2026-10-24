@@ -33,7 +33,7 @@ R('get',p+'/devices/:deviceId/measurements',userAuth,deviceScope,h.history);R('g
 R('get',p+'/devices/:deviceId/health',userAuth,deviceScope,h.healthHistory);
 R('get',p+'/device/config',deviceAuth,h.deviceConfig);R('get',p+'/devices/:deviceId/config',userAuth,deviceScope,h.userConfig);
 R('put',p+'/devices/:deviceId/config',userAuth,requireRole('OPERATOR','ADMIN'),deviceScope,h.putConfig);
-R('get',p+'/alerts',userAuth,h.alerts);R('get',p+'/alerts/:alertId',userAuth,h.alertDetail);R('patch',p+'/alerts/:alertId/acknowledge',userAuth,requireRole('OPERATOR','ADMIN'),h.acknowledge);
+R('get',p+'/alerts',userAuth,h.alerts);R('get',p+'/alerts/:alertId',userAuth,h.alertDetail);R('post',p+'/alerts/:alertId/read',userAuth,h.markAlertRead);R('patch',p+'/alerts/:alertId/acknowledge',userAuth,requireRole('OPERATOR','ADMIN'),h.acknowledge);
 R('post',p+'/notifications/register-device',userAuth,h.registerPush);R('delete',p+'/notifications/unregister-device',userAuth,h.unregisterPush);
 R('post',p+'/realtime/auth',userAuth,h.pusherAuth);
 R('get',p+'/jobs/dispatch',dispatch);R('get',p+'/jobs/offline',offlineSweep);
