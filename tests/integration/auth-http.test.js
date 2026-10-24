@@ -147,8 +147,9 @@ test('Firebase emulators: registered buoy keys, disable/re-enable, rotation and 
 test('Firebase emulators: provisioning, scoped history and oil alert acknowledge over HTTP',async()=>{
  const tag=randomUUID().replaceAll('-','').slice(0,14);
  const password='Strong-Test-Password-123!';
+ let userSerial=0;
  const create=async(role,allowedDeviceIds=[])=>{
-  const email=`phase1_${role.toLowerCase()}_${tag}@example.test`;
+  const email=`phase1_${role.toLowerCase()}_${++userSerial}_${tag}@example.test`;
   const user=await auth.createUser({email,password,emailVerified:true});
   await db.collection('users').doc(user.uid).set({email,role,status:'ACTIVE',displayName:role,allowedDeviceIds});
   return {user,token:await signIn(email,password)};
