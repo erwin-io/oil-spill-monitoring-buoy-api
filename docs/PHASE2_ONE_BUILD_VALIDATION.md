@@ -11,7 +11,7 @@ Owner: thesis operator. **One real Firebase project only** (oil-spill-monitoring
 1. Review Firebase project ID and service credentials. Keep service JSON/private keys OUT of git.
 2. Run `npm run verify:local -- --skip-install` (uses disposable demo- emulators).
 3. Ensure `firestore.indexes.json` includes status/createdAt and deviceId/status/createdAt combinations. **Owner must approve index deployment** to the existing cloud project.
-4. In Firebase Console configure Firestore TTL policy on `_rateLimitWindows.expiresAt` (timestamp) so temporary rate-window records expire.
+4. Firestore TTL deletes require billing; the protected GET /api/v1/jobs/dispatch worker now performs bounded ordinary Firestore deletes of expired `_rateLimitWindows.expiresAt` records (up to 100/tick). Confirm the scheduler is active and `prunedRateWindows` is reported. Paid TTL is optional.
 5. Run existing cloud read-only smoke only after a verified, nonprivileged Firebase account is configured; never create synthetic incident/alert data in existing cloud.
 6. Configure optional Pusher server-side secret and public mobile key from the SAME app/cluster; keep Pusher secret only on API. Configure FCM Admin permissions and matching native google-services.json locally. Provider delivery evidence remains OPEN until tests against the real providers, not mocked events.
 7. For 60-minute OFFLINE behavior, a daily Hobby Vercel cron is inadequate. The existing 15-minute GitHub Actions scheduler is opt-in (repository variable + secrets) and best effort, not an SLA.
