@@ -38,6 +38,11 @@ R('post',p+'/auth/bootstrap',distributedRateLimit('bootstrap',30),h.bootstrap);R
 R('get',p+'/devices',userAuth,h.listDevices);R('post',p+'/devices',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.registerDevice);
 R('get',p+'/devices/:deviceId',userAuth,deviceScope,h.getDevice);R('patch',p+'/devices/:deviceId',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.updateDevice);
 R('post',p+'/devices/:deviceId/rotate-key',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.rotateKey);
+R('post',p+'/devices/:deviceId/claim-code',userAuth,requireRole('ADMIN'),distributedRateLimit('claim_admin',10),h.reissueClaimCode);
+R('post',p+'/device/pairing-challenges',deviceAuth,distributedRateLimit('pair_start',6),h.startPairing);
+R('post',p+'/devices/:deviceId/claims',userAuth,distributedRateLimit('claim_request',10),h.requestClaim);
+R('get',p+'/devices/:deviceId/claims/:challengeId',userAuth,h.pairingStatus);
+R('post',p+'/device/pairing-confirmations',deviceAuth,distributedRateLimit('pair_confirm',12),h.confirmPairing);
 R('post',p+'/device/measurements',deviceAuth,distributedRateLimit('telemetry',240),h.ingestMeasurement);R('post',p+'/device/health',deviceAuth,distributedRateLimit('telemetry',240),h.ingestHealth);
 R('get',p+'/devices/:deviceId/measurements',userAuth,deviceScope,h.history);R('get',p+'/devices/:deviceId/measurements/latest',userAuth,deviceScope,h.latest);
 R('get',p+'/devices/:deviceId/health',userAuth,deviceScope,h.healthHistory);

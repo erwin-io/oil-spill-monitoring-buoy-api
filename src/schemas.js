@@ -1,6 +1,8 @@
 import {z} from 'zod';
 const id=z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 export const deviceId=id;
+export const claimRequest=z.object({challengeId:id,claimCode:z.string().min(32).max(128)}).strict();
+export const confirmClaim=z.object({challengeId:id,nonce:z.string().min(32).max(128)}).strict();
 const at=z.string().datetime({offset:true});
 const spectral=z.object({f415:z.number().finite().nonnegative(),f445:z.number().finite().nonnegative(),f480:z.number().finite().nonnegative(),f515:z.number().finite().nonnegative(),f555:z.number().finite().nonnegative(),f590:z.number().finite().nonnegative()}).strict();
 export const measurement=z.object({measurementId:id,measuredAt:at,classification:z.enum(['NORMAL','PETROLEUM','INTERFERENCE','INCONCLUSIVE']),confidence:z.number().min(0).max(1),spectral,totalFluorescence:z.number().finite().nonnegative(),batteryPercent:z.number().min(0).max(100).optional(),signalStrengthDbm:z.number().min(-150).max(0).optional(),cellStatus:z.enum(['CLEAN','DIRTY','RETRY_CLEANING','MAINTENANCE_REQUIRED','UNKNOWN']).optional(),firmwareVersion:z.string().max(50).optional(),modelVersion:z.string().max(50).optional(),qualityFlags:z.array(z.string().max(40)).max(20).optional(),calibrationVersion:z.string().max(80).optional(),configVersion:z.number().int().min(1).optional(),diagnostics:z.record(z.union([z.string().max(120),z.number().finite(),z.boolean()])).optional()}).strict();

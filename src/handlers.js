@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {firebase} from './firebase.js';
 import {CONFIG_DEFAULT,makeKey,keyHash,canRead,canOperate,httpError,parseTime,latestWins,alertKey,configNext,tokenId,healthAlerts} from './domain.js';
 import {validate,measurement,health,newDevice,editDevice,editConfig,pushToken,deviceId} from './schemas.js';
+import {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus} from './pairing.js';
 const now=()=>new Date().toISOString();
 const stable=x=>Array.isArray(x)?'['+x.map(stable).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+stable(x[k])).join(',')+'}':JSON.stringify(x);
 const digest=x=>createHash('sha256').update(stable(x)).digest('hex');
@@ -41,13 +42,14 @@ export async function listDevices(req,res){const db=firebase().db;
 }
 export async function getDevice(req,res){const doc=await firebase().db.collection('devices').doc(req.params.deviceId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);res.json(safeDevice(clean(doc)))}
 export async function registerDevice(req,res){const input=validate(newDevice,req.body);const {db}=firebase();const id=input.deviceId;
- const secret=makeKey();const pepper=process.env.DEVICE_KEY_PEPPER;const hash=keyHash(secret,pepper);
+ const secret=makeKey(),claimCode=makeKey();const pepper=process.env.DEVICE_KEY_PEPPER;const hash=keyHash(secret,pepper);
  await db.runTransaction(async tx=>{const ref=db.collection('devices').doc(id),cref=db.collection('deviceCredentials').doc(id);if((await tx.get(ref)).exists)throw httpError('DEVICE_EXISTS',409);
  tx.create(ref,{...input,status:'ACTIVE',registeredAt:now(),lastSeenAt:null,lastMeasurementAt:null,latestClassification:null,confidence:null});
- tx.create(cref,{keyHash:hash,enabled:true,rotatedAt:now()});
+ tx.create(cref,{keyHash:hash,claimCodeHash:keyHash('claim:v1:'+claimCode,pepper),claimCodeVersion:1,enabled:true,rotatedAt:now()});
  tx.create(ref.collection('config').doc('current'),{...CONFIG_DEFAULT,configVersion:1,updatedAt:now()});
- });res.status(201).json({deviceId:id,deviceKey:secret,warning:'Store the key securely; it will not be shown again.'});
+ });res.status(201).json({deviceId:id,deviceKey:secret,claimCode,warning:'Store the upload key outside the QR; place only the device ID and claim code inside the protected internal QR. Neither secret is shown again.'});
 }
+export {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus};
 export async function updateDevice(req,res){
  const p=validate(editDevice,req.body);const {db}=firebase(),id=req.params.deviceId;
  const ref=db.collection('devices').doc(id),credential=db.collection('deviceCredentials').doc(id);
