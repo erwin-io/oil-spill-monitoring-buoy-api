@@ -49,7 +49,13 @@ const commands = [
   {name:'Firebase Auth + Firestore HTTP integration',command:'npx',argv:[
     '--yes','firebase-tools@15.9.0','emulators:exec',
     '--project',demoProject,'--only','firestore,auth',
-    'node --test --test-force-exit tests/integration/*.test.js',
+    // On Windows Node runs npx.cmd via cmd.exe. Without explicit shell quotes,
+    // cmd.exe splits this Firebase emulators:exec positional command into
+    // separate CLI options, causing Firebase to reject "--test".
+    // On POSIX, spawnSync passes the entire command as a single argv element.
+    windows
+      ? '"node --test --test-force-exit tests/integration/*.test.js"'
+      : 'node --test --test-force-exit tests/integration/*.test.js',
   ]},
 ];
 const results = [];
