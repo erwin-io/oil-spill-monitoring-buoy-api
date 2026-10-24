@@ -6,6 +6,7 @@ Decision basis: approved P2-DEC-001, P2-DEC-007 and P2-DEC-008. This branch adds
 
 - Trusted ADMIN `POST /api/v1/devices` returns `deviceKey` and a distinct one-time-display `claimCode`. The upload key belongs only in firmware/provisioning, never in QR, mobile app, logs or a user-visible page. The protected internal QR contains `deviceId` plus `claimCode`; it should be inaccessible without physical access to the product.
 - Neither secret is stored in plaintext. The claim code uses a domain-separated HMAC and a version counter in `deviceCredentials/{deviceId}`. `POST /api/v1/devices/{deviceId}/claim-code` lets a trusted ADMIN reissue a code **only while unowned**. It invalidates the old QR and active challenge, preserves the device upload key and history. Legacy credentials require this reissue because existing devices never had a claim code.
+- Encode the protected QR as JSON `{"v":1,"deviceId":"<id>","claimCode":"<one-time-display code>"}` with exactly these fields. Keep the upload credential out of the QR. The mobile scanner rejects unknown versions, extra fields and malformed IDs/codes.
 - Device credentials must still be protected against extraction. A stolen upload key plus claim code can defeat a software-only pairing imitation; firmware must only call the challenge route on physical PAIR input, separate from reset, and confirm only within that physical pairing window. API cannot attest a physical button by itself.
 
 ## Five-minute handshake
