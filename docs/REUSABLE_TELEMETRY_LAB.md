@@ -2,25 +2,44 @@
 
 The same script can be run repeatedly to send editable simulated buoy readings through the REAL local Express API, verify real Pusher Channels private-channel delivery, and optionally send actual FCM notifications **only when server-generated alerts call for them**. Synthetic Firestore/Auth records NEVER touch the production cloud project.
 
-## One-time setup (Pusher credential configuration)
+**This now supports repo-native first-run automation:** existing API `.env` provider variables are discovered without separately creating a home-directory configuration.
 
-From Windows PowerShell, after pulling main and running npm ci:
+## Automatic configuration (no separate setup required when your API .env already has credentials)
+
+The tester runs **inside the API repository** and now auto-detects Pusher credentials in this order:
+
+1. Current PowerShell environment variables (PUSHER_APP_ID, PUSHER_KEY, PUSHER_SECRET, PUSHER_CLUSTER).
+2. Gitignored repo-local scripts/telemetry-lab.config.json.
+3. The API's existing .env.local followed by .env.
+4. The original home-directory config at $HOME\secure\oilspill\telemetry-lab.config.json, if one exists.
+
+If your existing API .env already contains all four Pusher variables, **nothing needs to be copied and the very first run executes immediately**:
 
     npm run sim:telemetry -- -Scenario normal
 
-The first execution automatically copies a configuration template into your private home directory, then exits. Open the private file:
+If no Pusher values exist anywhere, the script cannot invent live provider credentials. It creates an editable gitignored file in the repository:
 
-    notepad (Join-Path $HOME 'secure\oilspill\telemetry-lab.config.json')
+    scripts\telemetry-lab.config.json
 
-Set the four Pusher Channels values once, preserving the JSON structure: pusher.appId, pusher.key, pusher.secret, pusher.cluster (usually ap1). These should come from your existing Pusher Channels dashboard. If your previously shared secret was exposed in screenshots, rotate it in Pusher and save the NEW value in this local file.
+Open this file and enter your actual Pusher Channels APP_ID, KEY, SECRET and CLUSTER once. Then rerun the same command. This file is stored in the repository folder for your convenience but is **intentionally excluded from Git commits**. You can alternatively place these four Pusher values in your API's existing .env instead.
 
-The Firebase Admin JSON path defaults to:
+To verify auto-detection without sending live provider events or FCM, run:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\telemetry-lab.ps1 -Scenario normal -CheckConfig
+
+For a fully offline first run, no Pusher or FCM credentials are needed:
+
+    npm run sim:telemetry -- -Scenario normal -NoPusher -NoPush
+
+### Firebase Admin credentials
+
+On alert scenarios, the script searches for the service-account JSON path in the current PowerShell session, the gitignored repo-local configuration, and .env (THESIS_FCM_CREDENTIALS_FILE, then GOOGLE_APPLICATION_CREDENTIALS), before defaulting to the existing validated file:
 
     $HOME\secure\oilspill\firebase-admin.json
 
-This is where you already moved your validated service-account JSON. Leave the private config setting fcm.serviceAccountJson set to AUTO, or change it to an absolute Windows path with doubled backslashes in JSON. The Firebase project is fixed to oil-spill-monitoring-buoy.
+An absolute Windows path may also be set under fcm.serviceAccountJson in the private repo JSON, e.g. "C:\\secure\\oilspill-service-account.json". The real FCM Messaging project remains restricted to oil-spill-monitoring-buoy. The runner prompts only for **your** Android FCM token when alerts will be sent; it never saves the token to disk.
 
-No Pusher secret, Firebase Admin JSON or registration token is ever committed to GitHub. The private config exists OUTSIDE the project folder.
+**Security:** Do not commit the repo-local JSON, .env, service-account credentials, or registration tokens. The runner's .gitignore protection covers scripts/telemetry-lab.config.json. If the earlier screenshot exposed your Pusher secret, rotate it and update your local credential source.
 
 ## Everyday one-command usage
 
