@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {Timestamp} from 'firebase-admin/firestore';
 import {firebase} from './firebase.js';
 import {keyHash,keysEqual,canRead,httpError} from './domain.js';
 export const asyncRoute=f=>(req,res,next)=>Promise.resolve().then(()=>f(req,res)).catch(next);
@@ -18,4 +20,38 @@ export async function deviceAuth(req,res,next){try{
  }catch(e){next(e)}}
 export const requireRole=(...roles)=>(req,res,next)=>roles.includes(req.user?.role)?next():next(httpError('FORBIDDEN',403));
 export const deviceScope=(req,res,next)=>canRead(req.user,req.params.deviceId)?next():next(httpError('FORBIDDEN',403));
-export function errorHandler(err,req,res,next){if(res.headersSent)return next(err);const status=err.status??(err.code==='auth/id-token-expired'?401:err.code?.startsWith('auth/')?401:500);if(status===500)console.error(JSON.stringify({requestId:req.requestId,code:'INTERNAL_ERROR',error:err.message}));res.status(status).json({error:{code:status===500?'INTERNAL_ERROR':err.code??'BAD_REQUEST',message:status===500?'Unexpected API error':err.message,requestId:req.requestId,...(err.details?{details:err.details}:{})}})}
+
+// Shared Firestore minute windows enforce admission across Vercel instances.
+// Scope: state-changing entrypoints; no raw IPs, tokens or secrets are stored.
+export function distributedRateLimit(kind,defaultLimit=60){
+ return async(req,res,next)=>{
+  try{
+   const configured=Number(process.env['RATE_LIMIT_'+kind.toUpperCase()]);
+   const limit=Number.isSafeInteger(configured)&&configured>0?configured:defaultLimit;
+   const principal=req.deviceId?('device:'+req.deviceId):req.user?.uid?('user:'+req.user.uid):('ip:'+(req.ip??'unknown'));
+   const window=Math.floor(Date.now()/60_000);
+   const key=createHash('sha256').update(kind+'|'+principal+'|'+window).digest('hex');
+   const ref=firebase().db.collection('_rateLimitWindows').doc(key);
+   const accepted=await firebase().db.runTransaction(async tx=>{
+    const snapshot=await tx.get(ref),current=snapshot.exists?(snapshot.data().count??0):0;
+    if(current>=limit)return false;
+    tx.set(ref,{kind,count:current+1,expiresAt:Timestamp.fromMillis((window+2)*60_000)},{merge:true});
+    return true;
+   });
+   if(!accepted){res.set('Retry-After',String(Math.max(1,Math.ceil(((window+1)*60_000-Date.now())/1000))));throw httpError('RATE_LIMITED',429)}
+   next();
+  }catch(error){next(error)}
+ };
+}
+// Only structured metadata reaches stdout/stderr. Do not print request URLs,
+// Firebase tokens, raw query parameters, body, IP, or error.message.
+export function errorHandler(err,req,res,next){
+ if(res.headersSent)return next(err);
+ const status=err.status??(err.code==='auth/id-token-expired'?401:err.code?.startsWith('auth/')?401:500);
+ const code=status===500?'INTERNAL_ERROR':err.code??'BAD_REQUEST';
+ const log={timestamp:new Date().toISOString(),requestId:req.requestId??'n/a',
+  method:req.method??'unknown',status,code,route:req.route?.path??'unmatched'};
+ if(status>=500)console.error(JSON.stringify(log));
+ else if(status>=400)console.warn(JSON.stringify(log));
+ res.status(status).json({error:{code,message:status===500?'Unexpected API error':(err.message??code),requestId:req.requestId,...(err.details?{details:err.details}:{})}});
+}
