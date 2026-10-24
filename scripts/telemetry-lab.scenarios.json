@@ -1,0 +1,184 @@
+{
+  "description": "Editable isolated buoy scenarios. All readings enter the real local API and local Firebase emulators only. FCM sends automatically on server-generated alert.created events; NO alert = NO push.",
+  "scenarios": {
+    "normal": {
+      "description": "Healthy NORMAL reading and healthy diagnostics; realtime only, no FCM.",
+      "expectedAlerts": [],
+      "steps": [
+        {
+          "kind": "measurement",
+          "classification": "NORMAL",
+          "confidence": 0.98,
+          "totalFluorescence": 12,
+          "batteryPercent": 82,
+          "cellStatus": "CLEAN"
+        },
+        {
+          "kind": "health",
+          "batteryPercent": 82,
+          "charging": true,
+          "sensor": "OK",
+          "cellStatus": "CLEAN",
+          "pendingUploads": 0
+        }
+      ]
+    },
+    "interference": {
+      "description": "Interference spectrum — realtime, no alert/push.",
+      "expectedAlerts": [],
+      "steps": [
+        {
+          "kind": "measurement",
+          "classification": "INTERFERENCE",
+          "confidence": 0.74,
+          "totalFluorescence": 38,
+          "batteryPercent": 80,
+          "cellStatus": "CLEAN"
+        }
+      ]
+    },
+    "inconclusive": {
+      "description": "Inconclusive measurement — realtime, no alert/push.",
+      "expectedAlerts": [],
+      "steps": [
+        {
+          "kind": "measurement",
+          "classification": "INCONCLUSIVE",
+          "confidence": 0.45,
+          "totalFluorescence": 20,
+          "batteryPercent": 81,
+          "cellStatus": "CLEAN"
+        }
+      ]
+    },
+    "below_threshold": {
+      "description": "PETROLEUM below configured confidence 0.8 threshold — no alert/push.",
+      "expectedAlerts": [],
+      "steps": [
+        {
+          "kind": "measurement",
+          "classification": "PETROLEUM",
+          "confidence": 0.52,
+          "totalFluorescence": 55,
+          "batteryPercent": 78,
+          "cellStatus": "CLEAN"
+        }
+      ]
+    },
+    "petroleum": {
+      "description": "High-confidence PETROLEUM — critical alert and real FCM push (if enabled).",
+      "expectedAlerts": [
+        "PETROLEUM"
+      ],
+      "steps": [
+        {
+          "kind": "measurement",
+          "classification": "PETROLEUM",
+          "confidence": 0.97,
+          "totalFluorescence": 93,
+          "batteryPercent": 78,
+          "cellStatus": "CLEAN"
+        }
+      ]
+    },
+    "low_battery": {
+      "description": "Low battery health diagnostics — warning alert and FCM.",
+      "expectedAlerts": [
+        "LOW_BATTERY"
+      ],
+      "steps": [
+        {
+          "kind": "health",
+          "batteryPercent": 11,
+          "charging": false,
+          "sensor": "OK",
+          "cellStatus": "CLEAN",
+          "pendingUploads": 0
+        }
+      ]
+    },
+    "sensor_fault": {
+      "description": "Broken spectral sensor — high severity alert and FCM.",
+      "expectedAlerts": [
+        "SENSOR_FAULT"
+      ],
+      "steps": [
+        {
+          "kind": "health",
+          "batteryPercent": 83,
+          "charging": false,
+          "sensor": "FAILED",
+          "cellStatus": "CLEAN",
+          "pendingUploads": 2
+        }
+      ]
+    },
+    "maintenance": {
+      "description": "Sampling cell requires maintenance — high severity alert and FCM.",
+      "expectedAlerts": [
+        "CELL_MAINTENANCE_REQUIRED"
+      ],
+      "steps": [
+        {
+          "kind": "health",
+          "batteryPercent": 85,
+          "charging": false,
+          "sensor": "OK",
+          "cellStatus": "MAINTENANCE_REQUIRED",
+          "pendingUploads": 1
+        }
+      ]
+    },
+    "all": {
+      "description": "Normal -> interference -> low-confidence oil -> high-confidence oil -> low battery/sensor fault/maintenance. Sends up to FOUR real test notifications.",
+      "expectedAlerts": [
+        "PETROLEUM",
+        "LOW_BATTERY",
+        "SENSOR_FAULT",
+        "CELL_MAINTENANCE_REQUIRED"
+      ],
+      "steps": [
+        {
+          "kind": "measurement",
+          "classification": "NORMAL",
+          "confidence": 0.95,
+          "totalFluorescence": 11,
+          "batteryPercent": 88,
+          "cellStatus": "CLEAN"
+        },
+        {
+          "kind": "measurement",
+          "classification": "INTERFERENCE",
+          "confidence": 0.72,
+          "totalFluorescence": 31,
+          "batteryPercent": 86,
+          "cellStatus": "CLEAN"
+        },
+        {
+          "kind": "measurement",
+          "classification": "PETROLEUM",
+          "confidence": 0.45,
+          "totalFluorescence": 54,
+          "batteryPercent": 86,
+          "cellStatus": "CLEAN"
+        },
+        {
+          "kind": "measurement",
+          "classification": "PETROLEUM",
+          "confidence": 0.96,
+          "totalFluorescence": 98,
+          "batteryPercent": 85,
+          "cellStatus": "CLEAN"
+        },
+        {
+          "kind": "health",
+          "batteryPercent": 13,
+          "charging": false,
+          "sensor": "FAILED",
+          "cellStatus": "MAINTENANCE_REQUIRED",
+          "pendingUploads": 2
+        }
+      ]
+    }
+  }
+}
