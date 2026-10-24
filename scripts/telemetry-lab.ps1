@@ -349,6 +349,7 @@ function Get-ConfigValue([string]$environmentKey,[string]$section,[string]$field
   }
   foreach ($candidate in $candidates) {
     $value = [string]$candidate.value
+    if ($field -eq 'serviceAccountJson' -and $value -eq 'AUTO') { continue }
     if (-not (Is-Placeholder $value)) {
       return $candidate
     }
