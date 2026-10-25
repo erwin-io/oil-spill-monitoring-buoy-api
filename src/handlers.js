@@ -40,7 +40,7 @@ export async function bootstrap(req,res){
 }
 export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);res.json({uid,role,status,email,displayName,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
 export async function listDevices(req,res){
- const db=firebase().db,limit=maxPage(req.query.limit);
+ const db=firebase().db,limit=maxPage(req.query.limit,100);
  const ids=(await accessibleDeviceIds(db,req.user)).sort();
  const after=req.query.cursor;
  if(after!==undefined&&(typeof after!=='string'||!ids.includes(after)))
