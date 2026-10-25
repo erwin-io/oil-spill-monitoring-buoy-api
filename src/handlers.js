@@ -207,9 +207,11 @@ export async function alerts(req,res){
  const nameDocs=await Promise.all(names.map(id=>db.collection('devices').doc(id).get()));
  const deviceNames=new Map(nameDocs.filter(d=>d.exists).map(d=>[d.id,d.data().name]));
  const readDocs=await db.collection('users').doc(req.user.uid).collection('readAlerts').get();
+ const readThroughDocs=await db.collection('users').doc(req.user.uid).collection('notificationReadThrough').get();
+ const readThrough=new Map(readThroughDocs.docs.filter(d=>allowedSet.has(d.id)).map(d=>[d.id,d.data().readAt]));
  const readEpisodes=new Map(readDocs.docs.map(d=>[d.id,d.data().episode??0]));
  const output=items.map(d=>({...clean(d),deviceName:deviceNames.get(d.data().deviceId)??d.data().deviceId,
-  unread:readEpisodes.get(d.id)!==(d.data().episode??0)}));
+  unread:readEpisodes.get(d.id)!==(d.data().episode??0)&&!(readThrough.get(d.data().deviceId)&&d.data().createdAt<=readThrough.get(d.data().deviceId))}));
  // Open alerts are an independent count; never derive this from a partial page.
  const countQuery=(id)=>{
   let q=db.collection('alerts').where('status','==','OPEN');
@@ -223,17 +225,24 @@ export async function alerts(req,res){
  }
  // Count OPEN alerts not yet seen in their *current episode*. A stable alert
  // document ID may be reopened; old read receipts must not hide new incidents.
- let readOpenCount=0;
+ let countedRead=new Set();
  for(let i=0;i<readDocs.docs.length;i+=20){
   const batch=await Promise.all(readDocs.docs.slice(i,i+20).map(d=>db.collection('alerts').doc(d.id).get()));
   for(let n=0;n<batch.length;n++){
    const alert=batch[n],receipt=readDocs.docs[i+n];
    if(alert.exists&&alert.data().status==='OPEN'&&allowedSet.has(alert.data().deviceId)&&
-      (receipt.data().episode??0)===(alert.data().episode??0))readOpenCount++;
+      (receipt.data().episode??0)===(alert.data().episode??0))countedRead.add(alert.id);
   }
  }
+ // Per-device mark-all watermarks never hide notifications from a buoy newly
+ // shared with this account. Reopened alert episodes update createdAt.
+ for(const [id,readAt] of readThrough){
+  if(typeof readAt!=='string')continue;
+  const open=await db.collection('alerts').where('deviceId','==',id).where('status','==','OPEN').get();
+  for(const doc of open.docs)if(doc.data().createdAt<=readAt)countedRead.add(doc.id);
+ }
  res.json({items:output,nextCursor:extra?items.at(-1)?.id:null,openCount,
-  unreadCount:Math.max(0,openCount-readOpenCount)});
+  unreadCount:Math.max(0,openCount-countedRead.size)});
 }
 export async function markAlertRead(req,res){
  const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId),alert=await ref.get();
@@ -242,6 +251,18 @@ export async function markAlertRead(req,res){
  await db.collection('users').doc(req.user.uid).collection('readAlerts').doc(alert.id)
   .set({alertId:alert.id,deviceId:alert.data().deviceId,episode:alert.data().episode??0,readAt:now()},{merge:true});
  res.json({alertId:alert.id,unread:false});
+}
+export async function markAllAlertsRead(req,res){
+ const db=firebase().db,ids=await accessibleDeviceIds(db,req.user),readAt=now();
+ const collection=db.collection('users').doc(req.user.uid).collection('notificationReadThrough');
+ // Watermarks apply only to devices accessible at this moment. They never
+ // acknowledge an incident, nor permanently mark future incoming invitations.
+ for(let i=0;i<ids.length;i+=400){
+  const batch=db.batch();
+  for(const id of ids.slice(i,i+400))batch.set(collection.doc(id),{readAt,deviceId:id});
+  await batch.commit();
+ }
+ res.json({readAt,deviceCount:ids.length});
 }
 export async function alertDetail(req,res){const db=firebase().db,doc=await db.collection('alerts').doc(req.params.alertId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);await requireAccess(db,req.user,doc.data().deviceId);res.json(clean(doc))}
 export async function acknowledge(req,res){const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId);let alert;
