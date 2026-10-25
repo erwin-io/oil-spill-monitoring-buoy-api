@@ -183,7 +183,7 @@ export async function putConfig(req,res){const input=validate(editConfig,req.bod
 export async function alerts(req,res){
  const db=firebase().db;
  const allowed=await accessibleDeviceIds(db,req.user),allowedSet=new Set(allowed);
- if(allowed?.length===0)return res.json({items:[],nextCursor:null,openCount:0});
+ if(allowed?.length===0)return res.json({items:[],nextCursor:null,openCount:0,unreadCount:0});
  const status=req.query.status;
  if(status!==undefined&&!['OPEN','ACKNOWLEDGED','RESOLVED'].includes(status))throw httpError('INVALID_ALERT_STATUS',422);
  const limit=maxPage(req.query.limit),cursorId=req.query.cursor;
@@ -231,26 +231,33 @@ export async function alerts(req,res){
   const counts=await Promise.all(chunks.slice(i,i+10).map(countQuery));
   openCount+=counts.reduce((n,c)=>n+c.data().count,0);
  }
- // Count OPEN alerts not yet seen in their *current episode*. A stable alert
- // document ID may be reopened; old read receipts must not hide new incidents.
- let countedRead=new Set();
+ // Personal unread count includes every incident status, not just OPEN.
+ // The separately returned openCount preserves the operational metric.
+ // A per-buoy Mark All Read watermark excludes prior episodes while later
+ // incidents and reopened episodes remain eligible.
+ let unreadCandidates=0;
+ for(let i=0;i<allowed.length;i+=10){
+  const counts=await Promise.all(allowed.slice(i,i+10).map(id=>{
+   let q=db.collection('alerts').where('deviceId','==',id);
+   const readAt=readThrough.get(id);
+   if(typeof readAt==='string')q=q.where('createdAt','>',readAt);
+   return q.count().get();
+  }));
+  unreadCandidates+=counts.reduce((n,c)=>n+c.data().count,0);
+ }
+ const countedRead=new Set();
  for(let i=0;i<readDocs.docs.length;i+=20){
   const batch=await Promise.all(readDocs.docs.slice(i,i+20).map(d=>db.collection('alerts').doc(d.id).get()));
   for(let n=0;n<batch.length;n++){
    const alert=batch[n],receipt=readDocs.docs[i+n];
-   if(alert.exists&&alert.data().status==='OPEN'&&allowedSet.has(alert.data().deviceId)&&
-      (receipt.data().episode??0)===(alert.data().episode??0))countedRead.add(alert.id);
+   if(!alert.exists||!allowedSet.has(alert.data().deviceId)||
+    (receipt.data().episode??0)!==(alert.data().episode??0))continue;
+   const readAt=readThrough.get(alert.data().deviceId);
+   if(typeof readAt!=='string'||alert.data().createdAt>readAt)countedRead.add(alert.id);
   }
  }
- // Per-device mark-all watermarks never hide notifications from a buoy newly
- // shared with this account. Reopened alert episodes update createdAt.
- for(const [id,readAt] of readThrough){
-  if(typeof readAt!=='string')continue;
-  const open=await db.collection('alerts').where('deviceId','==',id).where('status','==','OPEN').get();
-  for(const doc of open.docs)if(doc.data().createdAt<=readAt)countedRead.add(doc.id);
- }
  res.json({items:output,nextCursor:extra?items.at(-1)?.id:null,openCount,
-  unreadCount:Math.max(0,openCount-countedRead.size)});
+  unreadCount:Math.max(0,unreadCandidates-countedRead.size)});
 }
 export async function markAlertRead(req,res){
  const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId),alert=await ref.get();
