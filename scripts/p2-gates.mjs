@@ -4,6 +4,7 @@
 import 'dotenv/config';
 import {spawnSync} from 'node:child_process';
 import {createHash,randomUUID} from 'node:crypto';
+import {homedir} from 'node:os';
 import {readFileSync,existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import {resolve,join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -67,7 +68,15 @@ async function cloudinaryProbe(){
 }
 function fingerprint(raw){
  const cleaned=String(raw||'').trim().toUpperCase();
- return /^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$/.test(cleaned)?cleaned:null;
+ if(/^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$/.test(cleaned))return cleaned;
+ // No extra prompt: discover the standard local Android debug certificate.
+ // Never pretend this proves the Google Play release-signing certificate.
+ const debugKeystore=join(homedir(),'.android','debug.keystore');
+ if(!existsSync(debugKeystore))return null;
+ const result=spawnSync('keytool',['-list','-v','-keystore',debugKeystore,'-alias','androiddebugkey',
+  '-storepass','android','-keypass','android'],{encoding:'utf8',timeout:9000,shell:false});
+ const found=(result.stdout||'').match(/SHA256:\\s*([A-F0-9:]+)/i)?.[1]?.toUpperCase();
+ return result.status===0&&/^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$/.test(found||'')?found:null;
 }
 function buildLinks(){
  const host=(env.P2_APP_LINK_HOST||((configured(env.FIREBASE_PROJECT_ID)?env.FIREBASE_PROJECT_ID+'.firebaseapp.com':''))).trim().toLowerCase();
