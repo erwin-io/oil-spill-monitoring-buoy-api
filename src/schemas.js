@@ -1,6 +1,9 @@
 import {z} from 'zod';
 const id=z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 export const deviceId=id;
+export const claimRequest=z.object({challengeId:id.optional(),claimCode:z.string().min(32).max(128)}).strict();
+export const confirmClaim=z.object({challengeId:id,nonce:z.string().min(32).max(128)}).strict();
+export const inviteViewer=z.object({email:z.string().trim().email().max(254).transform(x=>x.toLowerCase())}).strict();
 const at=z.string().datetime({offset:true});
 const spectral=z.object({f415:z.number().finite().nonnegative(),f445:z.number().finite().nonnegative(),f480:z.number().finite().nonnegative(),f515:z.number().finite().nonnegative(),f555:z.number().finite().nonnegative(),f590:z.number().finite().nonnegative()}).strict();
 export const measurement=z.object({measurementId:id,measuredAt:at,classification:z.enum(['NORMAL','PETROLEUM','INTERFERENCE','INCONCLUSIVE']),confidence:z.number().min(0).max(1),spectral,totalFluorescence:z.number().finite().nonnegative(),batteryPercent:z.number().min(0).max(100).optional(),signalStrengthDbm:z.number().min(-150).max(0).optional(),cellStatus:z.enum(['CLEAN','DIRTY','RETRY_CLEANING','MAINTENANCE_REQUIRED','UNKNOWN']).optional(),firmwareVersion:z.string().max(50).optional(),modelVersion:z.string().max(50).optional(),qualityFlags:z.array(z.string().max(40)).max(20).optional(),calibrationVersion:z.string().max(80).optional(),configVersion:z.number().int().min(1).optional(),diagnostics:z.record(z.union([z.string().max(120),z.number().finite(),z.boolean()])).optional()}).strict();
@@ -9,5 +12,6 @@ export const newDevice=z.object({deviceId:id,name:z.string().trim().min(1).max(1
 export const editDevice=z.object({name:z.string().trim().min(1).max(120).optional(),status:z.enum(['ACTIVE','DISABLED']).optional()}).strict().refine(x=>Object.keys(x).length>0,{message:'At least one device field must be supplied'});
 export const config=z.object({samplingIntervalMinutes:z.number().int().min(1).max(1440).optional(),measurementRepeats:z.number().int().min(1).max(20).optional(),settleSeconds:z.number().int().min(0).max(120).optional(),cleaningCycles:z.number().int().min(1).max(10).optional(),maxCleaningRetries:z.number().int().min(0).max(10).optional(),oilConfidenceThreshold:z.number().min(0).max(1).optional(),lowBatteryThreshold:z.number().min(1).max(50).optional()}).strict();
 export const editConfig=config.extend({configVersion:z.number().int().min(1)});
-export const pushToken=z.object({token:z.string().min(20).max(4096),platform:z.enum(['android','ios','web']),provider:z.literal('FCM').default('FCM')}).strict();
+export const profileEdit=z.object({displayName:z.string().trim().min(2).max(80)}).strict();
+export const pushToken=z.object({token:z.string().min(20).max(4096),platform:z.enum(['android','ios','web']),provider:z.literal('FCM').default('FCM'),sessionId:z.string().uuid().optional(),sessionSecret:z.string().min(32).max(128).optional()}).strict();
 export function validate(schema,input){const result=schema.safeParse(input);if(!result.success){const e=new Error('Request schema validation failed');e.status=422;e.code='VALIDATION_ERROR';e.details=result.error.issues.map(x=>({field:x.path.join('.'),message:x.message}));throw e}return result.data}

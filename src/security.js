@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {Timestamp} from 'firebase-admin/firestore';
 import {firebase} from './firebase.js';
 import {keyHash,keysEqual,canRead,httpError} from './domain.js';
+import {requireAccess} from './access.js';
 export const asyncRoute=f=>(req,res,next)=>Promise.resolve().then(()=>f(req,res)).catch(next);
 export async function userAuth(req,res,next){try{
  const match=/^Bearer (\S+)$/i.exec(req.get('authorization')??'');if(!match)throw httpError('AUTH_REQUIRED',401);
@@ -19,17 +20,19 @@ export async function deviceAuth(req,res,next){try{
  req.deviceId=deviceId;next();
  }catch(e){next(e)}}
 export const requireRole=(...roles)=>(req,res,next)=>roles.includes(req.user?.role)?next():next(httpError('FORBIDDEN',403));
-export const deviceScope=(req,res,next)=>canRead(req.user,req.params.deviceId)?next():next(httpError('FORBIDDEN',403));
+export const deviceScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId).then(()=>next(),next);
+export const deviceOwnerScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId,'OWNER').then(()=>next(),next);
+export const deviceOperatorScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId,'OPERATE').then(()=>next(),next);
 
 // Shared Firestore minute windows enforce admission across Vercel instances.
 // Scope: state-changing entrypoints; no raw IPs, tokens or secrets are stored.
-export function distributedRateLimit(kind,defaultLimit=60){
+export function distributedRateLimit(kind,defaultLimit=60,now=Date.now){
  return async(req,res,next)=>{
   try{
    const configured=Number(process.env['RATE_LIMIT_'+kind.toUpperCase()]);
    const limit=Number.isSafeInteger(configured)&&configured>0?configured:defaultLimit;
    const principal=req.deviceId?('device:'+req.deviceId):req.user?.uid?('user:'+req.user.uid):('ip:'+(req.ip??'unknown'));
-   const window=Math.floor(Date.now()/60_000);
+   const window=Math.floor(now()/60_000);
    const key=createHash('sha256').update(kind+'|'+principal+'|'+window).digest('hex');
    const ref=firebase().db.collection('_rateLimitWindows').doc(key);
    const accepted=await firebase().db.runTransaction(async tx=>{
@@ -38,7 +41,7 @@ export function distributedRateLimit(kind,defaultLimit=60){
     tx.set(ref,{kind,count:current+1,expiresAt:Timestamp.fromMillis((window+2)*60_000)},{merge:true});
     return true;
    });
-   if(!accepted){res.set('Retry-After',String(Math.max(1,Math.ceil(((window+1)*60_000-Date.now())/1000))));throw httpError('RATE_LIMITED',429)}
+   if(!accepted){res.set('Retry-After',String(Math.max(1,Math.ceil(((window+1)*60_000-now())/1000))));throw httpError('RATE_LIMITED',429)}
    next();
   }catch(error){next(error)}
  };
