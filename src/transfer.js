@@ -60,7 +60,7 @@ export async function acceptTransfer(req,res){
  const profile=await db.collection('users').doc(req.user.uid).get();
  if(!profile.exists||profile.data().status!=='ACTIVE')throw httpError('RECIPIENT_NOT_ACTIVE',403);
  const {device,transfer,audit,pairing}=references(db,id);
- await db.runTransaction(async tx=>{
+ try{await db.runTransaction(async tx=>{
   const [d,t]=await Promise.all([tx.get(device),tx.get(transfer)]);
   if(!d.exists||!d.data().ownerUid)throw httpError('NOT_FOUND',404);
   assertPending(t,d.data().ownerUid,req.user.uid);
@@ -72,7 +72,13 @@ export async function acceptTransfer(req,res){
   tx.update(transfer,{state:'ACCEPTED',acceptedAt:now()});
   tx.delete(pairing);
   tx.create(audit,{type:'TRANSFER_ACCEPTED',requestId,actorUid:req.user.uid,previousOwnerUid:t.data().fromUid,at:now()});
- });
+ });}catch(error){
+  // Concurrent accept attempts may exhaust emulator/Firestore transaction
+  // retries. Treat ABORTED as a conflict, never as a successful transfer.
+  if(error?.code===10||error?.code==='ABORTED'||error?.code==='aborted')
+   throw httpError('TRANSFER_CONFLICT',409);
+  throw error;
+ }
  res.json({deviceId:id,state:'ACCEPTED',access:'OWNER'});
 }
 export async function incomingTransfers(req,res){
