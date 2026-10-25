@@ -39,11 +39,18 @@ export async function bootstrap(req,res){
  res.json({uid:id.uid,email:p.email,displayName:p.displayName,role:p.role,status:p.status,allowedDeviceIds:accessible,accessibleDeviceIds:accessible});
 }
 export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);res.json({uid,role,status,email,displayName,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
-export async function listDevices(req,res){const db=firebase().db;
- const ids=await accessibleDeviceIds(db,req.user);
- const docs=await Promise.all(ids.slice(0,100).map(id=>db.collection('devices').doc(id).get()));
+export async function listDevices(req,res){
+ const db=firebase().db,limit=maxPage(req.query.limit);
+ const ids=(await accessibleDeviceIds(db,req.user)).sort();
+ const after=req.query.cursor;
+ if(after!==undefined&&(typeof after!=='string'||!ids.includes(after)))
+  throw httpError('INVALID_CURSOR',400);
+ const start=after===undefined?0:ids.indexOf(after)+1;
+ const pageIds=ids.slice(start,start+limit),remaining=ids.length>start+pageIds.length;
+ const docs=await Promise.all(pageIds.map(id=>db.collection('devices').doc(id).get()));
  const visible=docs.filter(d=>d.exists);
- res.json({items:await Promise.all(visible.map(async d=>({...safeDevice(clean(d)),access:await accessLevel(db,req.user,d.id)}))),nextCursor:null});
+ res.json({items:await Promise.all(visible.map(async d=>({...safeDevice(clean(d)),access:await accessLevel(db,req.user,d.id)}))),
+  nextCursor:remaining?pageIds.at(-1):null});
 }
 export async function getDevice(req,res){const db=firebase().db,doc=await db.collection('devices').doc(req.params.deviceId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);res.json({...safeDevice(clean(doc)),access:await accessLevel(db,req.user,doc.id)})}
 export async function registerDevice(req,res){const input=validate(newDevice,req.body);const {db}=firebase();const id=input.deviceId;
