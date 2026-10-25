@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
- customActionUrl,actionSettings,authEmailEnabled,sendResendAction,
+ customActionUrl,nativeActionUrl,actionSettings,authEmailEnabled,sendResendAction,
  emailAddress,requestPasswordReset,unverifiedIdentity,
 } from '../src/auth-email.js';
 const HOST='oil-spill-monitoring-buoy.firebaseapp.com';
@@ -61,4 +61,21 @@ test('P2-15 reset endpoint never reveals nonexistent, Google-only or provider-fa
  // the emulator HTTP test, rather than replacing Admin SDK internals here.
  assert.equal(typeof requestPasswordReset,'function');
  assert.equal(typeof unverifiedIdentity,'function');
+});
+
+test('P2-15 native-only email action links carry Firebase code only to the approved Android verified host',()=>{
+ for(const mode of ['resetPassword','verifyEmail']){
+  const raw='https://'+HOST+'/__/auth/action?mode='+mode+'&oobCode=ONE_TIME_FAKE_CODE&apiKey='+KEY+
+    '&continueUrl='+encodeURIComponent('https://evil.example.invalid');
+  const url=new URL(nativeActionUrl(raw,mode,KEY));
+  assert.equal(url.origin,'https://'+HOST);
+  assert.equal(url.pathname,'/open/auth-action');
+  assert.deepEqual([...url.searchParams.keys()].sort(),['apiKey','mode','oobCode']);
+  assert.equal(url.searchParams.get('mode'),mode);
+  assert.equal(url.searchParams.get('oobCode'),'ONE_TIME_FAKE_CODE');
+  assert.ok(!url.toString().includes('evil.example.invalid'));
+  assert.throws(()=>nativeActionUrl(raw.replace(HOST,'evil.example.invalid'),mode,KEY));
+  assert.throws(()=>nativeActionUrl(raw+'&mode='+mode,mode,KEY));
+  assert.throws(()=>nativeActionUrl(raw.replace(KEY,'INVALID_PROJECT'),mode,KEY));
+ }
 });
