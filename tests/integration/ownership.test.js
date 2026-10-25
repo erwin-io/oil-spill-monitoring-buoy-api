@@ -65,7 +65,11 @@ test('strict ownership gates all reads, owner writes, Viewer invitation and futu
   const fcmRef=db.collection('notificationOutbox').doc('owned_job_'+randomUUID().slice(0,12));
   await fcmRef.set({type:'alert.created',deviceId:id,status:'CLAIMED'});
   for(const [person,token] of [[owner,'token-owner-test'],[viewer,'token-viewer-test'],[outsider,'token-outsider-test'],[admin,'token-admin-test']]){
-   await db.collection('notificationTokens').doc('owned_token_'+person.uid).set({uid:person.uid,active:true,token});
+   const sessionId='owned_session_'+person.uid,installationId='owned_install_'+person.uid;
+   await db.collection('pushSessions').doc(sessionId).set({uid:person.uid,installationId,state:'ACTIVE',
+    expiresAt:new Date(Date.now()+86_400_000).toISOString()});
+   await db.collection('pushInstallations').doc(installationId).set({sessionId,uid:person.uid});
+   await db.collection('notificationTokens').doc('owned_token_'+person.uid).set({uid:person.uid,active:true,token,sessionId});
   }
   let sent=[];
   const messaging={sendEachForMulticast:async m=>{sent.push(...m.tokens);return {responses:m.tokens.map(()=>({success:true}))}}};
