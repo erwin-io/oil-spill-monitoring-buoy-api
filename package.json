@@ -10,13 +10,14 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/app.js && node --check src/handlers.js && node --check src/pairing.js && node --check src/sharing.js && node --check src/transfer.js && node --check src/migration-plan.js && node --check src/push-sessions.js && node --check src/avatar.js && node --check src/email-links.js && node --check scripts/p2-gates.mjs && node --check scripts/p2-migration-inventory.mjs && node --check src/access.js && node --check src/jobs.js && node --check src/domain.js && node --check src/schemas.js && node --check src/security.js && node --check src/firebase.js && node --check src/swagger.js && node --check src/server.js && node --check scripts/verify-local.mjs && node --check scripts/verify-existing-firebase.mjs && node --check scripts/simulator-launch.mjs && node --check scripts/simulator-pipeline.mjs",
+    "check": "node --check src/app.js && node --check src/handlers.js && node --check src/pairing.js && node --check src/sharing.js && node --check src/transfer.js && node --check src/migration-plan.js && node --check src/push-sessions.js && node --check src/avatar.js && node --check src/user-reset-policy.js && node --check scripts/reset-test-user.mjs && node --check src/email-links.js && node --check scripts/p2-gates.mjs && node --check scripts/p2-migration-inventory.mjs && node --check src/access.js && node --check src/jobs.js && node --check src/domain.js && node --check src/schemas.js && node --check src/security.js && node --check src/firebase.js && node --check src/swagger.js && node --check src/server.js && node --check scripts/verify-local.mjs && node --check scripts/verify-existing-firebase.mjs && node --check scripts/simulator-launch.mjs && node --check scripts/simulator-pipeline.mjs",
     "verify:local": "node scripts/verify-local.mjs",
     "verify:existing-firebase": "node scripts/verify-existing-firebase.mjs",
     "verify:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-thesis.ps1",
     "sim:pipeline": "node scripts/simulator-launch.mjs",
     "verify:p2": "node scripts/p2-gates.mjs",
-    "sim:telemetry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/telemetry-lab.ps1"
+    "sim:telemetry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/telemetry-lab.ps1",
+    "user:reset": "node scripts/reset-test-user.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
