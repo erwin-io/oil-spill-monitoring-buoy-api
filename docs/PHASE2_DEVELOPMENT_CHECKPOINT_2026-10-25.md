@@ -182,3 +182,10 @@ This is a continuation of the original checkpoint, **not** a replacement for the
 - P2-16 simulated/emulator data is never written to live Firebase. Optional actual staging checks are READ-ONLY and use short-lived test-account token. Test runner does **not** perform real Firestore migration, rollback, production FCM broadcasting, Hosting deployment, cloud account configuration or Android installation by itself.
 - P2-17: installed real phone is required to validate Gmail tap/Android verified App Links, QR camera and background FCM. A real ESP32/physical PAIR input is required to certify hardware-backed pairing and firmware/electronics/optics/waterproof acceptance, but **not** required for the complete software emulator contract acceptance. Maintain hardware acceptance as MANUAL/PENDING, never fabricate proof.
 - Official Google Sheet original checklist 103 entries and unapproved 18 proposed Phase 2 rows are not updated by this source merge.
+
+
+### Final source PR disposition — owner-approved local test merge
+- **API PR #6 MERGED** as `d81d83ed2f16c8d0c5489cfc8586b940310085ef`; **API PR #5 CLOSED as superseded**, not independently merged.
+- **Mobile PR #4 MERGED** as `10d5e1b8220a7b43d28ef0f4043a0c63b9351389`, after both exact-head CI jobs succeeded at `c8f5a2adaf0751bcb8b1837a799b273de5b50974`. Original Mobile PR #3 was previously merged as `dbd54fd9b7b0f44e30089cdf515369fcc37f0b15`.
+- Both API and Mobile `main` now contain Phase 2 SOFTWARE source for local testing. **Not a production release or physical acceptance.**
+- **Next owner action:** fetch/pull both repositories' `main` branches, copy API `.env.example` to ignored `.env`, configure only desired provider keys, then `npm run verify:p2` in API root; read `.test-output/p2-gates/report.md` and JSON. Cloudinary live, Hosting assetlinks deployment, Gmail tap, phone push delivery and physical PAIR remain PASS/SKIP/MANUAL only when actually observed. Vercel main auto-deployment remains explicitly disabled for local source testing.
