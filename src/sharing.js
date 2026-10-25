@@ -1,4 +1,5 @@
 import {firebase} from './firebase.js';
+import {sendInvitationEmail} from './email-links.js';
 import {httpError} from './domain.js';
 import {validate,deviceId,inviteViewer as invitationSchema} from './schemas.js';
 const now=()=>new Date().toISOString();
@@ -23,7 +24,8 @@ export async function inviteViewer(req,res){
   const pending={deviceId:id,ownerUid:req.user.uid,inviteeUid:target.uid,email:target.email.toLowerCase(),status:'PENDING',invitedAt:now()};
   tx.set(invite,pending);tx.set(incoming,pending);
  });
- res.status(201).json({deviceId:id,email:target.email.toLowerCase(),status:'PENDING'});
+ const delivery=await sendInvitationEmail(target.email.toLowerCase(),id);
+ res.status(201).json({deviceId:id,email:target.email.toLowerCase(),status:'PENDING',emailDelivery:delivery.status});
 }
 export async function myInvitations(req,res){
  const docs=await firebase().db.collection('users').doc(req.user.uid).collection('invitations').get();
