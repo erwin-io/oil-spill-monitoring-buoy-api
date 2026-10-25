@@ -7,6 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import swagger from './swagger.js';
 import {randomUUID} from 'node:crypto';
 import * as h from './handlers.js';
+import * as transfer from './transfer.js';
 import {dispatch,offlineSweep} from './jobs.js';
 import {userAuth,deviceAuth,requireRole,deviceScope,deviceOwnerScope,deviceOperatorScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
 import {httpError} from './domain.js';
@@ -47,6 +48,10 @@ R('post',p+'/devices/:deviceId/invitations',userAuth,deviceOwnerScope,distribute
 R('get',p+'/invitations',userAuth,h.myInvitations);
 R('post',p+'/devices/:deviceId/invitations/accept',userAuth,distributedRateLimit('invite_accept',15),h.acceptInvitation);
 R('delete',p+'/devices/:deviceId/viewers/:viewerUid',userAuth,deviceOwnerScope,distributedRateLimit('invite',10),h.revokeViewer);
+R('post',p+'/devices/:deviceId/transfer',userAuth,deviceOwnerScope,distributedRateLimit('transfer',6),transfer.startTransfer);
+R('delete',p+'/devices/:deviceId/transfer',userAuth,deviceOwnerScope,distributedRateLimit('transfer',6),transfer.cancelTransfer);
+R('get',p+'/transfers/incoming',userAuth,transfer.incomingTransfers);
+R('post',p+'/devices/:deviceId/transfer/accept',userAuth,distributedRateLimit('transfer_accept',6),transfer.acceptTransfer);
 R('post',p+'/device/measurements',deviceAuth,distributedRateLimit('telemetry',240),h.ingestMeasurement);R('post',p+'/device/health',deviceAuth,distributedRateLimit('telemetry',240),h.ingestHealth);
 R('get',p+'/devices/:deviceId/measurements',userAuth,deviceScope,h.history);R('get',p+'/devices/:deviceId/measurements/latest',userAuth,deviceScope,h.latest);
 R('get',p+'/devices/:deviceId/health',userAuth,deviceScope,h.healthHistory);
