@@ -75,7 +75,7 @@ function fingerprint(raw){
  if(!existsSync(debugKeystore))return null;
  const result=spawnSync('keytool',['-list','-v','-keystore',debugKeystore,'-alias','androiddebugkey',
   '-storepass','android','-keypass','android'],{encoding:'utf8',timeout:9000,shell:false});
- const found=(result.stdout||'').match(/SHA256:\\s*([A-F0-9:]+)/i)?.[1]?.toUpperCase();
+ const found=(result.stdout||'').match(/SHA256:\s*([A-F0-9:]+)/i)?.[1]?.toUpperCase();
  return result.status===0&&/^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$/.test(found||'')?found:null;
 }
 function buildLinks(){
