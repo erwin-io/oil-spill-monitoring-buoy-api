@@ -9,6 +9,7 @@ import {randomUUID} from 'node:crypto';
 import * as h from './handlers.js';
 import * as transfer from './transfer.js';
 import * as sessions from './push-sessions.js';
+import * as avatar from './avatar.js';
 import {dispatch,offlineSweep} from './jobs.js';
 import {userAuth,deviceAuth,requireRole,deviceScope,deviceOwnerScope,deviceOperatorScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
 import {httpError} from './domain.js';
@@ -38,6 +39,8 @@ R('get','/health',h.readiness);R('get','/swagger.json',(req,res)=>res.json(swagg
 const p='/api/v1';
 R('post',p+'/auth/bootstrap',distributedRateLimit('bootstrap',30),h.bootstrap);R('get',p+'/auth/me',userAuth,h.me);
 R('patch',p+'/auth/me',userAuth,distributedRateLimit('user_change',60),h.updateOwnProfile);
+R('put',p+'/auth/avatar',userAuth,distributedRateLimit('avatar_upload',8),express.raw({type:['image/jpeg','image/png','image/webp'],limit:'2mb'}),avatar.putAvatar);
+R('delete',p+'/auth/avatar',userAuth,distributedRateLimit('avatar_upload',8),avatar.deleteAvatar);
 R('get',p+'/devices',userAuth,h.listDevices);R('post',p+'/devices',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.registerDevice);
 R('get',p+'/devices/:deviceId',userAuth,deviceScope,h.getDevice);R('patch',p+'/devices/:deviceId',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.updateDevice);
 R('post',p+'/devices/:deviceId/rotate-key',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.rotateKey);
