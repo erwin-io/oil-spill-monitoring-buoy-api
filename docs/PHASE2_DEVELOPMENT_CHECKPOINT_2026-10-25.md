@@ -62,7 +62,7 @@ For each row above, set A=`H. Phase 2 / BlueGuard Product`, B=P2 ID, C=checklist
 
 | ID | D: precise acceptance text | E API | F Firebase | G Mobile | H Device |
 | --- | --- | --- | --- | --- | --- |
-| P2-01 | Provision distinct claim and upload secrets; QR excludes upload key; physical PAIR policy. | — | — | — | ✓ |
+| P2-01 | Provision distinct claim and upload secrets; QR excludes upload key; physical PAIR policy. | ✓ | ✓ | — | ✓ |
 | P2-02 | Device-auth challenge, atomic sole-owner lock, expiration/replay/competition tests. | ✓ | ✓ | ✓ | ✓ |
 | P2-03 | Authorized owner transfer/recovery; physical reset/PAIR cannot steal an owned device; security tests. | ✓ | ✓ | ✓ | ✓ |
 | P2-04 | Per-device read/write middleware across history, config, health, alerts and profiles; outsider isolation. | ✓ | ✓ | ✓ | — |
