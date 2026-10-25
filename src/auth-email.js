@@ -49,14 +49,23 @@ export function customActionUrl(generated,mode,expectedKey){
  safe.searchParams.set('apiKey',expectedKey);
  return safe.toString();
 }
+// Native-only HTTPS App Link: Android's verified host opens BlueGuard and
+// the mobile Firebase SDK verifies the single-use code. This URL is a bearer
+// credential and must never be logged, reflected in an API response, or stored
+// in a navigation history. Existing /auth/action web links remain valid.
+export function nativeActionUrl(generated,mode,expectedKey){
+ const parsed=new URL(customActionUrl(generated,mode,expectedKey));
+ parsed.pathname='/open/auth-action';
+ return parsed.toString();
+}
 export async function sendAuthAction(recipient,mode,link,options={}){
  if(!authEmailEnabled())throw httpError('AUTH_EMAIL_NOT_CONFIGURED',503);
  const subject=mode==='verifyEmail'?'Verify your BlueGuard Buoy email':'Reset your BlueGuard Buoy password';
  const text=mode==='verifyEmail'
-  ?'Confirm your BlueGuard Buoy email using this secure, one-time Firebase link:\n\n'+link+
-    '\n\nAfter verification, tap Open BlueGuard Buoy. Ignore this email if you did not register.'
-  :'You can reset your BlueGuard Buoy password using this secure, one-time Firebase link:\n\n'+link+
-    '\n\nAfter resetting, tap Open BlueGuard Buoy and sign in with the new password. Ignore this email if you did not request it.';
+  ?'Open this secure, one-time link on your Android phone with BlueGuard Buoy installed to verify your email:\n\n'+link+
+    '\n\nBlueGuard Buoy opens to finish verification. Do not forward this link. Ignore this message if you did not register.'
+  :'Open this secure, one-time link on your Android phone with BlueGuard Buoy installed to reset your password inside the app:\n\n'+link+
+    '\n\nEnter your new password only inside the BlueGuard Buoy app; then sign in. Do not forward this link. Ignore this email if you did not request it.';
  return sendTransactionalEmail({to:recipient,subject,text},options);
 }
 // Preserve the earlier exported method name for test clients and callers.
@@ -102,7 +111,7 @@ export async function requestVerification(req,res){
  if(!await hourlyEmailQuota(db,'uid:'+identity.uid))
   throw httpError('EMAIL_RATE_LIMITED',429);
  const source=await auth.generateEmailVerificationLink(identity.email,actionSettings('verifyEmail'));
- const link=customActionUrl(source,'verifyEmail',process.env.P2_FIREBASE_WEB_API_KEY);
+ const link=nativeActionUrl(source,'verifyEmail',process.env.P2_FIREBASE_WEB_API_KEY);
  if(!await sendAuthAction(identity.email,'verifyEmail',link))
   throw httpError('EMAIL_DELIVERY_UNAVAILABLE',503);
  res.status(202).json({accepted:true});
@@ -119,7 +128,7 @@ export async function requestPasswordReset(req,res){
    const user=await auth.getUserByEmail(email);
    if(!user.disabled){
     const generated=await auth.generatePasswordResetLink(email,actionSettings('resetPassword'));
-    const link=customActionUrl(generated,'resetPassword',process.env.P2_FIREBASE_WEB_API_KEY);
+    const link=nativeActionUrl(generated,'resetPassword',process.env.P2_FIREBASE_WEB_API_KEY);
     await sendAuthAction(email,'resetPassword',link);
    }
   }catch{/* Deliberately non-enumerating: no email, code or provider diagnostics. */}
