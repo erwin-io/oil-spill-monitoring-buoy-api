@@ -223,9 +223,11 @@ async function main(){
  requireExactConfirmation(confirm,email,report.projectId);
  // Re-check account-to-email and owner status immediately before any cloud write.
  const verified=await auth.getUser(uid);
+ const freshProfile=await db.collection('users').doc(uid).get();
  const currentOwners=await db.collection('devices').where('ownerUid','==',uid).limit(1).get();
- eligibleForReset({role:profile.exists?profile.data().role:undefined,
+ eligibleForReset({role:freshProfile.exists?freshProfile.data().role:undefined,
   ownedDeviceIds:currentOwners.docs.map(d=>d.id),accountEmail:verified.email,requestedEmail:email});
+ if(freshProfile.exists&&dbEmail(freshProfile.data().email)!==email)fail('PROFILE_CHANGED_AFTER_CONFIRM');
  report.outcome='IN_PROGRESS';
  save();
  // Fail closed: disable Firebase identity first and permanently revoke its
