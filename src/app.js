@@ -57,6 +57,7 @@ R('get',p+'/devices/:deviceId/measurements',userAuth,deviceScope,h.history);R('g
 R('get',p+'/devices/:deviceId/health',userAuth,deviceScope,h.healthHistory);
 R('get',p+'/device/config',deviceAuth,h.deviceConfig);R('get',p+'/devices/:deviceId/config',userAuth,deviceScope,h.userConfig);
 R('put',p+'/devices/:deviceId/config',userAuth,deviceOperatorScope,distributedRateLimit('user_change',60),h.putConfig);
+R('post',p+'/notifications/read-all',userAuth,distributedRateLimit('user_change',60),h.markAllAlertsRead);
 R('get',p+'/alerts',userAuth,h.alerts);R('get',p+'/alerts/:alertId',userAuth,h.alertDetail);R('post',p+'/alerts/:alertId/read',userAuth,distributedRateLimit('user_change',60),h.markAlertRead);R('patch',p+'/alerts/:alertId/acknowledge',userAuth,distributedRateLimit('user_change',60),h.acknowledge);
 R('post',p+'/notifications/register-device',userAuth,distributedRateLimit('push_register',30),h.registerPush);R('delete',p+'/notifications/unregister-device',userAuth,distributedRateLimit('push_register',30),h.unregisterPush);
 R('post',p+'/realtime/auth',userAuth,distributedRateLimit('realtime_auth',120),h.pusherAuth);
