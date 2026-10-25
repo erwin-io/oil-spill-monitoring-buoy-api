@@ -87,7 +87,10 @@ export async function hourlyEmailQuota(db,identity,limit=3){
  });
 }
 export function authEmailConfig(_req,res){
- res.json({delivery:authEmailEnabled()?mailReadiness():'firebase'});
+ const active=authEmailEnabled();
+ // Only this backend's SMTP/Resend action emails use verified native HTTPS App Links.
+ // Old / disabled backend must not be treated as native-capable by Android.
+ res.json({delivery:active?mailReadiness():'firebase',nativeActionLinks:active});
 }
 export async function unverifiedIdentity(req,res,next){
  try{

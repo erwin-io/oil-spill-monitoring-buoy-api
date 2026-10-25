@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
- customActionUrl,nativeActionUrl,actionSettings,authEmailEnabled,sendResendAction,
+ customActionUrl,nativeActionUrl,actionSettings,authEmailEnabled,authEmailConfig,sendResendAction,
  emailAddress,requestPasswordReset,unverifiedIdentity,
 } from '../src/auth-email.js';
 const HOST='oil-spill-monitoring-buoy.firebaseapp.com';
@@ -78,4 +78,20 @@ test('P2-15 native-only email action links carry Firebase code only to the appro
   assert.throws(()=>nativeActionUrl(raw+'&mode='+mode,mode,KEY));
   assert.throws(()=>nativeActionUrl(raw.replace(KEY,'INVALID_PROJECT'),mode,KEY));
  }
+});
+
+test('P2-15 email provider capability flags native-app Firebase action handling only when enabled',async()=>{
+ const payloads=[];
+ const res={json:x=>payloads.push(x)};
+ const vars={P2_AUTH_EMAIL_ENABLED:'true',P2_EMAIL_PROVIDER:'resend',
+  P2_EMAIL_API_KEY:'re_test',P2_EMAIL_FROM:'BlueGuard <onboarding@resend.dev>',
+  P2_FIREBASE_WEB_API_KEY:KEY,FIREBASE_PROJECT_ID:'oil-spill-monitoring-buoy',
+  DEVICE_KEY_PEPPER:'x'.repeat(64)};
+ await env(vars,async()=>{
+  authEmailConfig(null,res);
+  assert.deepEqual(payloads.pop(),{delivery:'resend',nativeActionLinks:true});
+  process.env.P2_AUTH_EMAIL_ENABLED='false';
+  authEmailConfig(null,res);
+  assert.deepEqual(payloads.pop(),{delivery:'firebase',nativeActionLinks:false});
+ });
 });
