@@ -117,3 +117,19 @@ For each row above, set A=`H. Phase 2 / BlueGuard Product`, B=P2 ID, C=checklist
 
 ## Operator gates
 Require explicit Project Owner approval before merging draft PRs, production deployment, Firestore migration/data writes/deletes, changing production credentials, actual clean re-provision cutover, Cloudinary/Firebase Hosting account or billing configuration, app identity migration or official checklist mutation. No recovered Work-mode uncommitted filesystem has been observed; only pushed GitHub state is recoverable.
+
+
+## Second development continuation (2026-10-25) — IMPLEMENTATION EVIDENCE
+This is a continuation of the original checkpoint, **not** a replacement for the owner-approved P2-DEC-001–009 or P2-01–18 proposal.
+
+- Detailed implementation/evidence report: [PHASE2_IMPLEMENTATION_REPORT_2026-10-25.md](./PHASE2_IMPLEMENTATION_REPORT_2026-10-25.md).
+- **P2-03 API:** owner-authorized verified-recipient transfer, one pending proposal, atomic consent-based ownership reassignment, replay/expiry/concurrency tests, Firestore audit events; recovered previous owner remains locked out. New mobile request/recipient acceptance UI added. Lost-account independent-proof recovery remains an explicit *unresolved approval/identity-proof gate*, not a backdoor.
+- **P2-06 API:** read-only inventory and dry-run/rollback simulator with no production writes, no automatic legacy owner mapping, preserved identity/history counts. Live inventory/backup/cutover remain separately gated.
+- **P2-11 API+mobile:** account/per-device Mark All Read, newest-first personal Notifications without status filters, independent OPEN/ACKNOWLEDGED/RESOLVED incident state; emulator/structural tests.
+- **P2-12 API+mobile:** per-installation session issuance, secret hash, session-bound FCM token, authenticated refresh/logout, expiry, account-switch invalidation, current access filter, invalid-token retirement logic and concurrency tests. Legacy tokens on unclaimed devices remain a transitional compatibility boundary. Offline logout secure durable retry and real Android push acceptance remain open.
+- **P2-14 dependency-ready follow-on:** Firebase password change with current-password reauthentication, confirm-new-password UI, Google-only account safeguard; existing working Google Sign-In preserved. User-level test evidence pending final mobile CI.
+- Verified backend integration CI at commit `09c219c7de5dcc063b790c82080b2570144b1afb`: https://github.com/erwin-io/oil-spill-monitoring-buoy-api/actions/runs/40158581761 (SUCCESS). Subsequent documentation-only commits still need final-head status recheck.
+- Mobile PR #4 had intermediate CI failures because test fixtures still demanded unapproved status filters and did not mock the new AuthService/FormsModule dependencies. The tests and code were updated on the *same* draft branch. Recheck final mobile CI before claiming green.
+- **No** PR merge, deployment, production migration, Cloudinary/Firebase Hosting configuration, hardware flash, field test or official Google Sheet edit has occurred.
+- Checklist statuses remain an **unapplied proposal**; do not mark items Completed on simulated evidence alone.
+- Next acceptance: final-head CI, Android installed-device scanner/PAIR/share/transfer/push tests, staging cross-account/session-revocation tests, signed App Links and Cloudinary provider setup under approval, live migration inventory/rollback review.
