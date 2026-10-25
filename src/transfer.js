@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {z} from 'zod';
 import {firebase} from './firebase.js';
 import {httpError} from './domain.js';
 import {validate,deviceId,inviteViewer} from './schemas.js';
@@ -52,7 +53,7 @@ export async function cancelTransfer(req,res){
 }
 export async function acceptTransfer(req,res){
  const id=validate(deviceId,req.params.deviceId),{requestId}=validate(
-  (await import('zod')).z.object({requestId:deviceId}).strict(),req.body);
+  z.object({requestId:deviceId}).strict(),req.body);
  const {auth,db}=firebase();
  const identity=await auth.getUser(req.user.uid);
  if(!identity.emailVerified||!identity.email)throw httpError('EMAIL_NOT_VERIFIED',403);
