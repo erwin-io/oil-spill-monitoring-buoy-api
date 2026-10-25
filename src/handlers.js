@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {firebase} from './firebase.js';
 import {CONFIG_DEFAULT,makeKey,keyHash,canRead,canOperate,httpError,parseTime,latestWins,alertKey,configNext,tokenId,healthAlerts} from './domain.js';
-import {validate,measurement,health,newDevice,editDevice,editConfig,pushToken,deviceId} from './schemas.js';
+import {validate,measurement,health,newDevice,editDevice,editConfig,pushToken,deviceId,profileEdit} from './schemas.js';
 import {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus} from './pairing.js';
 import {accessibleDeviceIds,accessLevel,requireAccess} from './access.js';
 import {requirePushSession,isEligiblePushSession} from './push-sessions.js';
@@ -39,6 +39,19 @@ export async function bootstrap(req,res){
  res.json({uid:id.uid,email:p.email,displayName:p.displayName,role:p.role,status:p.status,allowedDeviceIds:accessible,accessibleDeviceIds:accessible});
 }
 export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);res.json({uid,role,status,email,displayName,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
+export async function updateOwnProfile(req,res){
+ const {displayName}=validate(profileEdit,req.body);
+ const db=firebase().db,ref=db.collection('users').doc(req.user.uid);
+ await db.runTransaction(async tx=>{
+  const profile=await tx.get(ref);
+  if(!profile.exists||profile.data().status!=='ACTIVE')throw httpError('ACCOUNT_DISABLED',403);
+  tx.update(ref,{displayName,profileUpdatedAt:now()});
+ });
+ const profile=await ref.get();
+ const allowedDeviceIds=await accessibleDeviceIds(db,{...profile.data(),uid:req.user.uid});
+ res.json({uid:req.user.uid,email:profile.data().email,role:profile.data().role,status:profile.data().status,
+  displayName:profile.data().displayName,allowedDeviceIds,accessibleDeviceIds:allowedDeviceIds});
+}
 export async function listDevices(req,res){
  const db=firebase().db,limit=maxPage(req.query.limit,100);
  const ids=(await accessibleDeviceIds(db,req.user)).sort();
