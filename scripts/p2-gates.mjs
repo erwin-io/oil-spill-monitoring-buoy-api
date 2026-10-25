@@ -113,6 +113,40 @@ async function emailProbe(links){
   entry('P2-15-EMAIL-DELIVERY',response.id?'PASS':'FAIL',response.id?'Email provider accepted test send (receipt/open remains to verify)':'Email sender did not return provider receipt');
  }catch(e){entry('P2-15-EMAIL-DELIVERY','FAIL',safe(e))}
 }
+async function stagingReadOnlyProbe(){
+ const base=env.P2_STAGING_API_BASE,token=env.P2_STAGING_ID_TOKEN;
+ if(!configured(base)||!configured(token)){
+  entry('P2-16-STAGING-REST','SKIP','Set P2_STAGING_API_BASE and short-lived P2_STAGING_ID_TOKEN for read-only current-user staging acceptance');
+  return;
+ }
+ let parsed;
+ try{parsed=new URL(base)}catch{entry('P2-16-STAGING-REST','FAIL','Invalid staging API URL');return}
+ if(parsed.protocol!=='https:'||parsed.username||parsed.password||!parsed.pathname.endsWith('/api/v1')){
+  entry('P2-16-STAGING-REST','FAIL','Require HTTPS API base ending in /api/v1');return
+ }
+ const headers={Authorization:'Bearer '+token};
+ try{
+  const who=await request(base+'/auth/me',{headers});
+  if(!who.uid||!who.email)throw new Error('Missing authenticated profile');
+  const buoys=await request(base+'/devices?limit=100',{headers});
+  if(!Array.isArray(buoys.items))throw Error('Invalid device page response');
+  const alerts=await request(base+'/alerts?limit=30',{headers});
+  if(!Array.isArray(alerts.items))throw Error('Invalid personal inbox response');
+  entry('P2-16-STAGING-REST','PASS','Staging profile, scoped paginated buoys and personal Notifications read over HTTPS');
+  if(configured(env.P2_STAGING_OUTSIDER_ID_TOKEN)&&configured(env.P2_STAGING_PRIVATE_DEVICE_ID)){
+   const id=encodeURIComponent(env.P2_STAGING_PRIVATE_DEVICE_ID);
+   const response=await fetch(base+'/devices/'+id,{headers:{Authorization:'Bearer '+env.P2_STAGING_OUTSIDER_ID_TOKEN},signal:AbortSignal.timeout(15000)});
+   entry('P2-16-STAGING-ISOLATION',[403,404].includes(response.status)?'PASS':'FAIL','Outsider device HTTP '+response.status);
+  }else entry('P2-16-STAGING-ISOLATION','SKIP','Optional outsider token + exclusively owned staging device ID not set');
+ }catch(e){entry('P2-16-STAGING-REST','FAIL',safe(e))}
+}
+function providerArgs(){
+ const args=[];
+ if(env.THESIS_PROVIDER_CONFIRM!=='SEND_TEST_PROVIDER_EVENTS')return args;
+ if(['PUSHER_APP_ID','PUSHER_KEY','PUSHER_SECRET','PUSHER_CLUSTER'].every(k=>configured(env[k])))args.push('--with-pusher');
+ if(['THESIS_FCM_PROJECT_ID','THESIS_FCM_TEST_TOKEN','THESIS_FCM_CREDENTIALS_FILE'].every(k=>configured(env[k])))args.push('--with-fcm');
+ return args;
+}
 function androidProbe(){
  const a=spawnSync('adb',['devices'],{encoding:'utf8',timeout:7000,shell:false});
  if(a.error||a.status!==0){entry('P2-17-ANDROID-ADB','SKIP','Android SDK adb not available');return}
@@ -142,6 +176,12 @@ try{
   if(!run('P2-17-MOBILE-TESTS','npm',['test'],{cwd:mobile,timeout:180000}))code=1;
   if(!run('P2-17-MOBILE-BUILD','npm',['run','check'],{cwd:mobile,timeout:240000}))code=1;
  }else entry('P2-17-MOBILE-TESTS','SKIP','Clone oil-spill-monitoring-buoy-app beside API checkout');
+ const liveArgs=providerArgs();
+ if(liveArgs.length){
+  if(!run('P2-16-PROVIDER-EMULATED-E2E','npm',['run','sim:pipeline','--',...liveArgs],{
+   env:{...env,TELEMETRY_LAB_SCENARIO:'all'},timeout:300000}))code=1;
+ }else entry('P2-16-PROVIDER-EMULATED-E2E','SKIP','No explicit THESIS_PROVIDER_CONFIRM and test-only Pusher/FCM provider credentials');
+ await stagingReadOnlyProbe();
  await cloudinaryProbe();
  const links=buildLinks();
  await verifyDomain(links);
