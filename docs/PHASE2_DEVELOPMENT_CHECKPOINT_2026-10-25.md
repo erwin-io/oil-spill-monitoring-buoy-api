@@ -133,3 +133,12 @@ This is a continuation of the original checkpoint, **not** a replacement for the
 - **No** PR merge, deployment, production migration, Cloudinary/Firebase Hosting configuration, hardware flash, field test or official Google Sheet edit has occurred.
 - Checklist statuses remain an **unapplied proposal**; do not mark items Completed on simulated evidence alone.
 - Next acceptance: final-head CI, Android installed-device scanner/PAIR/share/transfer/push tests, staging cross-account/session-revocation tests, signed App Links and Cloudinary provider setup under approval, live migration inventory/rollback review.
+
+
+### Final validated code checkpoints — October 25, 2026
+- **API PR #6 code commit** `126066c67cd6158be359a039e40d22a068881fbf`: [GitHub API validation run 40159201060](https://github.com/erwin-io/oil-spill-monitoring-buoy-api/actions/runs/40159201060) **SUCCESS**: `test`, `firestore-emulator`, `isolated-simulator-e2e`, `windows-powershell-wrapper`. A simulated concurrent ownership acceptance exposed an occasional Firestore ABORTED retry exhaustion; the API now returns a definite 409 conflict rather than allowing uncontrolled error propagation. Firestore integration job reports **24/24** passing subtests.
+- **Mobile PR #4 code commit** `55a3bb0e40772f39a8a1f2bfb69696493f193ef3`: [mobile checks run 40159303407](https://github.com/erwin-io/oil-spill-monitoring-buoy-app/actions/runs/40159303407) **SUCCESS**: `install-test-build` (**58/58** tests and production build) and `android-apk-compile` (Gradle APK build). This verifies build and emulator/structural test execution, **not** physical QR scanning, Android notification delivery or buoy hardware behavior.
+- Both remain **DRAFT** stacked PRs and **unmerged**. These code-checkpoint SHAs precede any later documentation-only commit on the same branch.
+- P2-03 lost-owner independent-proof recovery remains **operator-gated and not implemented as an automatic takeover**. P2-06 actual cloud inventory/backup, P2-12 durable secure offline-logout revocation retry, staging FCM/Pusher, and installed-device tests remain **OPEN**.
+- P2-14 password-change implementation passed mobile CI but is not yet accepted on a real Android device or cross-provider account matrix.
+- The original 103 official checklist rows remain unchanged, and all 18 proposed Phase 2 additions remain a separate reviewable proposal.
