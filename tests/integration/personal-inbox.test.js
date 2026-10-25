@@ -39,6 +39,16 @@ test('P2-11 per-user, per-buoy Mark All Read never acknowledges incidents or pre
   assert.equal(mark.status,200);assert.equal(mark.data.deviceCount,1);
   const inbox=await call(viewer,'GET','/api/v1/alerts');
   assert.equal(inbox.data.items[0].unread,false);assert.equal(inbox.data.unreadCount,0);
+  // A newly created RESOLVED incident is still an unread personal notification.
+  const resolvedId='resolved_'+randomUUID().slice(0,12);
+  await db.collection('alerts').doc(resolvedId).set({deviceId,type:'OFFLINE',severity:'LOW',episode:0,status:'RESOLVED',createdAt:new Date(Date.now()+1000).toISOString()});
+  const withResolved=await call(viewer,'GET','/api/v1/alerts');
+  assert.equal(withResolved.data.items.find(a=>a.id===resolvedId).unread,true);
+  assert.equal(withResolved.data.openCount,1);
+  assert.equal(withResolved.data.unreadCount,1,'closed incident should count as unread notification');
+  assert.equal((await call(viewer,'POST','/api/v1/alerts/'+resolvedId+'/read')).status,200);
+  const afterResolvedRead=await call(viewer,'GET','/api/v1/alerts');
+  assert.equal(afterResolvedRead.data.unreadCount,0);
   assert.equal((await db.collection('alerts').doc(alertId).get()).data().status,'OPEN');
   assert.equal((await call(owner,'GET','/api/v1/alerts')).data.items[0].unread,true);
   assert.equal((await call(viewer,'PATCH','/api/v1/alerts/'+alertId+'/acknowledge')).status,403);
