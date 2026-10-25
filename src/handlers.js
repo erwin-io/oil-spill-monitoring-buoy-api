@@ -36,9 +36,9 @@ export async function bootstrap(req,res){
  const ref=db.collection('users').doc(id.uid);
  await db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists){tx.create(ref,{email:id.email,displayName:id.name??id.email.split('@')[0],role:'VIEWER',status:'ACTIVE',allowedDeviceIds:[],createdAt:now()})}else if(snap.data().status!=='ACTIVE'){throw httpError('ACCOUNT_DISABLED',403)}});
  const p=(await ref.get()).data(),accessible=await accessibleDeviceIds(db,{...p,uid:id.uid});
- res.json({uid:id.uid,email:p.email,displayName:p.displayName,role:p.role,status:p.status,allowedDeviceIds:accessible,accessibleDeviceIds:accessible});
+ res.json({uid:id.uid,email:p.email,displayName:p.displayName,role:p.role,status:p.status,avatarUrl:p.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible});
 }
-export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);res.json({uid,role,status,email,displayName,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
+export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);res.json({uid,role,status,email,displayName,avatarUrl:req.user.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
 export async function updateOwnProfile(req,res){
  const {displayName}=validate(profileEdit,req.body);
  const db=firebase().db,ref=db.collection('users').doc(req.user.uid);
@@ -50,7 +50,7 @@ export async function updateOwnProfile(req,res){
  const profile=await ref.get();
  const allowedDeviceIds=await accessibleDeviceIds(db,{...profile.data(),uid:req.user.uid});
  res.json({uid:req.user.uid,email:profile.data().email,role:profile.data().role,status:profile.data().status,
-  displayName:profile.data().displayName,allowedDeviceIds,accessibleDeviceIds:allowedDeviceIds});
+  displayName:profile.data().displayName,avatarUrl:profile.data().avatarUrl??null,allowedDeviceIds,accessibleDeviceIds:allowedDeviceIds});
 }
 export async function listDevices(req,res){
  const db=firebase().db,limit=maxPage(req.query.limit,100);
