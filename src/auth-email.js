@@ -9,7 +9,7 @@ const HOST='oil-spill-monitoring-buoy.firebaseapp.com';
 const MODES=new Set(['verifyEmail','resetPassword']);
 const EMAIL=/^[^\s@]{1,64}@[^\s@]{1,190}$/;
 const required=()=>[
-  'P2_EMAIL_API_KEY','P2_EMAIL_FROM','P2_FIREBASE_WEB_API_KEY','FIREBASE_PROJECT_ID'
+  'P2_EMAIL_API_KEY','P2_EMAIL_FROM','P2_FIREBASE_WEB_API_KEY','FIREBASE_PROJECT_ID','DEVICE_KEY_PEPPER'
 ].every(name=>typeof process.env[name]==='string'&&process.env[name].trim().length>0);
 export function authEmailEnabled(){
  return process.env.P2_AUTH_EMAIL_ENABLED==='true'&&required()&&
@@ -91,7 +91,7 @@ export async function unverifiedIdentity(req,res,next){
   const identity=await auth.getUser(claims.uid);
   if(identity.disabled||!identity.email||!claims.email||
    identity.email.toLowerCase()!==claims.email.toLowerCase()||
-   !identity.providerData.some(x=>x.providerId==='password'))
+   claims.firebase?.sign_in_provider!=='password')
    throw httpError('ACCOUNT_NOT_ELIGIBLE',403);
   req.emailIdentity={uid:identity.uid,email:identity.email,emailVerified:identity.emailVerified};
   next();
@@ -120,7 +120,7 @@ export async function requestPasswordReset(req,res){
  if(await hourlyEmailQuota(db,'email:'+email)){
   try{
    const user=await auth.getUserByEmail(email);
-   if(!user.disabled&&user.providerData.some(x=>x.providerId==='password')){
+   if(!user.disabled){
     const generated=await auth.generatePasswordResetLink(email,actionSettings('resetPassword'));
     const link=customActionUrl(generated,'resetPassword',process.env.P2_FIREBASE_WEB_API_KEY);
     await sendResendAction(email,'resetPassword',link);
