@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {firebase} from './firebase.js';
 import {httpError} from './domain.js';
 import {Timestamp} from 'firebase-admin/firestore';
+import {mailConfigReady,mailReadiness,sendTransactionalEmail} from './mail-transport.js';
 
 // Admin-generated action codes remain single-use Firebase credentials.
 // They are never logged or passed through the BlueGuard Android App Link.
@@ -9,10 +10,10 @@ const HOST='oil-spill-monitoring-buoy.firebaseapp.com';
 const MODES=new Set(['verifyEmail','resetPassword']);
 const EMAIL=/^[^\s@]{1,64}@[^\s@]{1,190}$/;
 const required=()=>[
-  'P2_EMAIL_API_KEY','P2_EMAIL_FROM','P2_FIREBASE_WEB_API_KEY','FIREBASE_PROJECT_ID','DEVICE_KEY_PEPPER'
+  'P2_FIREBASE_WEB_API_KEY','FIREBASE_PROJECT_ID','DEVICE_KEY_PEPPER'
 ].every(name=>typeof process.env[name]==='string'&&process.env[name].trim().length>0&&!/^REPLACE_WITH|^YOUR_/i.test(process.env[name].trim()));
 export function authEmailEnabled(){
- return process.env.P2_AUTH_EMAIL_ENABLED==='true'&&required()&&
+ return process.env.P2_AUTH_EMAIL_ENABLED==='true'&&required()&&mailConfigReady()&&
   process.env.DEVICE_KEY_PEPPER.length>=32&&
   process.env.FIREBASE_PROJECT_ID==='oil-spill-monitoring-buoy';
 }
@@ -48,7 +49,7 @@ export function customActionUrl(generated,mode,expectedKey){
  safe.searchParams.set('apiKey',expectedKey);
  return safe.toString();
 }
-export async function sendResendAction(recipient,mode,link,fetchImpl=fetch){
+export async function sendAuthAction(recipient,mode,link,options={}){
  if(!authEmailEnabled())throw httpError('AUTH_EMAIL_NOT_CONFIGURED',503);
  const subject=mode==='verifyEmail'?'Verify your BlueGuard Buoy email':'Reset your BlueGuard Buoy password';
  const text=mode==='verifyEmail'
@@ -56,17 +57,12 @@ export async function sendResendAction(recipient,mode,link,fetchImpl=fetch){
     '\n\nAfter verification, tap Open BlueGuard Buoy. Ignore this email if you did not register.'
   :'You can reset your BlueGuard Buoy password using this secure, one-time Firebase link:\n\n'+link+
     '\n\nAfter resetting, tap Open BlueGuard Buoy and sign in with the new password. Ignore this email if you did not request it.';
- try{
-  const response=await fetchImpl('https://api.resend.com/emails',{
-   method:'POST',headers:{Authorization:'Bearer '+process.env.P2_EMAIL_API_KEY,'Content-Type':'application/json'},
-   body:JSON.stringify({from:process.env.P2_EMAIL_FROM,to:[recipient],subject,text}),
-   signal:AbortSignal.timeout(15000),
-  });
-  if(!response.ok)return false;
-  const result=await response.json();
-  return typeof result.id==='string'&&result.id.length>0;
- }catch{return false}
+ return sendTransactionalEmail({to:recipient,subject,text},options);
 }
+// Preserve the earlier exported method name for test clients and callers.
+// It uses the selected provider; provider selection is explicit in .env.
+export const sendResendAction=(recipient,mode,link,fetchImpl=fetch)=>
+ sendAuthAction(recipient,mode,link,{fetch:fetchImpl});
 // Independent per-UID/email quota, effective across API instances. No plaintext
 // email in Firestore and no successful-delivery status exposed to reset callers.
 export async function hourlyEmailQuota(db,identity,limit=3){
@@ -82,7 +78,7 @@ export async function hourlyEmailQuota(db,identity,limit=3){
  });
 }
 export function authEmailConfig(_req,res){
- res.json({delivery:authEmailEnabled()?'resend':'firebase'});
+ res.json({delivery:authEmailEnabled()?mailReadiness():'firebase'});
 }
 export async function unverifiedIdentity(req,res,next){
  try{
@@ -107,7 +103,7 @@ export async function requestVerification(req,res){
   throw httpError('EMAIL_RATE_LIMITED',429);
  const source=await auth.generateEmailVerificationLink(identity.email,actionSettings('verifyEmail'));
  const link=customActionUrl(source,'verifyEmail',process.env.P2_FIREBASE_WEB_API_KEY);
- if(!await sendResendAction(identity.email,'verifyEmail',link))
+ if(!await sendAuthAction(identity.email,'verifyEmail',link))
   throw httpError('EMAIL_DELIVERY_UNAVAILABLE',503);
  res.status(202).json({accepted:true});
 }
@@ -124,7 +120,7 @@ export async function requestPasswordReset(req,res){
    if(!user.disabled){
     const generated=await auth.generatePasswordResetLink(email,actionSettings('resetPassword'));
     const link=customActionUrl(generated,'resetPassword',process.env.P2_FIREBASE_WEB_API_KEY);
-    await sendResendAction(email,'resetPassword',link);
+    await sendAuthAction(email,'resetPassword',link);
    }
   }catch{/* Deliberately non-enumerating: no email, code or provider diagnostics. */}
  }
