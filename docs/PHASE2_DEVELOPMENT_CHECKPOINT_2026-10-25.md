@@ -38,45 +38,45 @@ Original checklist ends at row 104. The following are **proposed additions in ro
 
 | Proposed sheet row | ID | Checklist item | Priority | Surface | Initial status | Dependency / implementation evidence | Decision |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 105 | P2-01 | Claim credentials / protected QR | P0 | API, Device | ✓ | In Progress | PR #5 |
-| 106 | P2-02 | Five-minute owner claim | P0 | API, Firestore, Device | ✓ | In Progress | P2-01; API #5; firmware PAIR |
-| 107 | P2-03 | Ownership transfer and recovery | P0 | API | ✓ | Not Started | P2-01/02/04 |
-| 108 | P2-04 | Per-buoy Owner/Viewer authorization | P0 | API, Firestore | — | In Progress | API #5/#6 |
-| 109 | P2-05 | Verified Viewer share/revoke | P0 | API, Mobile | — | In Progress | P2-04; API #6; Mobile #4 |
-| 110 | P2-06 | Clean re-provision dry-run and rollback | P0 | Migration | ✓ | Not Started | P2-01–05; owner approval for actual cutover |
-| 111 | P2-07 | Scoped telemetry / realtime / push | P0 | API, Mobile | ✓ | In Progress | P2-04/05; P2-12 for full FCM |
-| 112 | P2-08 | Mobile Add Device pairing UX | P1 | Mobile, Device | ✓ | In Progress | Mobile #4; P2-01/02/03 |
-| 113 | P2-09 | No-access Overview | P1 | Mobile | — | In Progress | P2-04/05; Mobile #4 |
-| 114 | P2-10 | My Buoys Owned / Shared | P1 | Mobile | — | In Progress | P2-04/05; Mobile #4 |
-| 115 | P2-11 | Personal Notifications inbox | P1 | API, Mobile | — | In Progress | Existing alert read route; missing Mark All Read / redesign |
-| 116 | P2-12 | FCM installation/session lifecycle | P1 | API, Mobile | — | Not Started | P2-04/07; staging FCM |
-| 117 | P2-13 | Own-profile display name and image | P1 | API, Mobile | — | Not Started | Cloudinary test account/provider setup separately gated |
-| 118 | P2-14 | Password and recovery workflows | P1 | Mobile, Auth | — | In Progress | Existing reset baseline; full change-password evidence missing |
-| 119 | P2-15 | Android verification / reset App Links | P1 | Firebase, Android | — | Not Started | Signing fingerprints / Hosting domain; operator-gated config |
-| 120 | P2-16 | Staging integration acceptance | P0/P1 | API, Mobile | ✓ | In Progress | P2-02/04/07/11/12; isolated staging |
-| 121 | P2-17 | Real installed Android acceptance | P1 | Android | ✓ | Not Started | P2-08–15; physical Android |
-| 122 | P2-18 | Governance, contracts and release gates | P0 | Tech Lead | ✓ | In Progress | P2-01–17; operator approvals |
+| 105 | P2-01 | Claim credentials / protected QR | P0 | API, Device | In Progress | PR #5 | P2-DEC-001 |
+| 106 | P2-02 | Five-minute owner claim | P0 | API, Firestore, Device | In Progress | P2-01; API #5; firmware PAIR | P2-DEC-001 |
+| 107 | P2-03 | Ownership transfer and recovery | P0 | API | Not Started | P2-01/02/04 | P2-DEC-001 |
+| 108 | P2-04 | Per-buoy Owner/Viewer authorization | P0 | API, Firestore | In Progress | API #5/#6 | P2-DEC-002 |
+| 109 | P2-05 | Verified Viewer share/revoke | P0 | API, Mobile | In Progress | P2-04; API #6; Mobile #4 | P2-DEC-002 |
+| 110 | P2-06 | Clean re-provision dry-run and rollback | P0 | Migration | Not Started | P2-01–05; owner approval for actual cutover | P2-DEC-007 |
+| 111 | P2-07 | Scoped telemetry / realtime / push | P0 | API, Mobile | In Progress | P2-04/05; P2-12 for full FCM | P2-DEC-002/004 |
+| 112 | P2-08 | Mobile Add Device pairing UX | P1 | Mobile, Device | In Progress | Mobile #4; P2-01/02/03 | P2-DEC-001 |
+| 113 | P2-09 | No-access Overview | P1 | Mobile | In Progress | P2-04/05; Mobile #4 | P2-DEC-002 |
+| 114 | P2-10 | My Buoys Owned / Shared | P1 | Mobile | In Progress | P2-04/05; Mobile #4 | P2-DEC-002 |
+| 115 | P2-11 | Personal Notifications inbox | P1 | API, Mobile | In Progress | Existing alert read route; missing Mark All Read / redesign | P2-DEC-003 |
+| 116 | P2-12 | FCM installation/session lifecycle | P1 | API, Mobile | Not Started | P2-04/07; staging FCM | P2-DEC-004 |
+| 117 | P2-13 | Own-profile display name and image | P1 | API, Mobile | Not Started | Cloudinary test account/provider setup separately gated | P2-DEC-005 |
+| 118 | P2-14 | Password and recovery workflows | P1 | Mobile, Auth | In Progress | Existing reset baseline; full change-password evidence missing | P2-DEC-005/006 |
+| 119 | P2-15 | Android verification / reset App Links | P1 | Firebase, Android | Not Started | Signing fingerprints / Hosting domain; operator-gated config | P2-DEC-006 |
+| 120 | P2-16 | Staging integration acceptance | P0/P1 | API, Mobile | In Progress | P2-02/04/07/11/12; isolated staging | P2-DEC-008 |
+| 121 | P2-17 | Real installed Android acceptance | P1 | Android | Not Started | P2-08–15; physical Android | P2-DEC-008 |
+| 122 | P2-18 | Governance, contracts and release gates | P0 | Tech Lead | In Progress | P2-01–17; operator approvals | P2-DEC-009 |
 
 ### Exact proposed columns for A105:J122
 For each row above, set A=`H. Phase 2 / BlueGuard Product`, B=P2 ID, C=checklist item title, D=acceptance criterion below, E/F/G/H=API/Firebase/Mobile/Device flags (✓ or —), I=proposed initial status above, J=High for P0 (and mixed P0/P1), Medium for P1. Existing sheet's statuses/validation/notes must be rechecked immediately before applying.
 
 | ID | D: precise acceptance text | E API | F Firebase | G Mobile | H Device |
 | --- | --- | --- | --- | --- | --- |
-| P2-01 | Provision distinct claim and upload secrets; QR excludes upload key; physical PAIR policy. | — | — | — | — |
+| P2-01 | Provision distinct claim and upload secrets; QR excludes upload key; physical PAIR policy. | — | — | — | ✓ |
 | P2-02 | Device-auth challenge, atomic sole-owner lock, expiration/replay/competition tests. | ✓ | ✓ | ✓ | ✓ |
 | P2-03 | Authorized owner transfer/recovery; physical reset/PAIR cannot steal an owned device; security tests. | ✓ | ✓ | ✓ | ✓ |
-| P2-04 | Per-device read/write middleware across history, config, health, alerts and profiles; outsider isolation. | ✓ | ✓ | ✓ | ✓ |
-| P2-05 | Verified-email invitation, explicit acceptance, current-rights revocation and read-only tests. | ✓ | ✓ | ✓ | ✓ |
-| P2-06 | Read-only inventory, backup, dry run, old ACL retirement, ID/history preservation and rollback rehearsal. | ✓ | ✓ | — | — |
+| P2-04 | Per-device read/write middleware across history, config, health, alerts and profiles; outsider isolation. | ✓ | ✓ | ✓ | — |
+| P2-05 | Verified-email invitation, explicit acceptance, current-rights revocation and read-only tests. | ✓ | ✓ | ✓ | — |
+| P2-06 | Read-only inventory, backup, dry run, old ACL retirement, ID/history preservation and rollback rehearsal. | ✓ | ✓ | — | ✓ |
 | P2-07 | Current Owner/Viewer access on reads, Pusher auth/reconnect and future FCM; retain ingest/idempotency. | ✓ | ✓ | ✓ | ✓ |
 | P2-08 | Protected QR and manual code, pending/expired/retry, simulated and physical PAIR evidence. | ✓ | — | ✓ | ✓ |
-| P2-09 | Empty account explains setup or invitation; shows no outsider history/alerts; shared account shows authorized data. | ✓ | — | ✓ | ✓ |
-| P2-10 | Owned/Shared navigation, detail/history, remove fleet/assigned wording, profile settings entry. | ✓ | — | ✓ | ✓ |
-| P2-11 | Newest first, per-user read/open/mark-all, no filters; owner-only incident ack and incident lifecycle. | ✓ | ✓ | ✓ | ✓ |
-| P2-12 | Authenticated install sessions, token binding, logout/expiry/invalid cleanup and revocation races; background eligibility. | ✓ | ✓ | ✓ | ✓ |
-| P2-13 | Signed Cloudinary Free avatar upload, validation, constrained transform, replace/remove and fallback. | ✓ | ✓ | ✓ | ✓ |
-| P2-14 | Change password with Firebase reauth and clear errors; preserve forgot password recovery. | — | ✓ | ✓ | ✓ |
-| P2-15 | HTTPS Hosting action links, verified App Links, web fallback and malformed/expired/reused tests. | — | ✓ | ✓ | ✓ |
+| P2-09 | Empty account explains setup or invitation; shows no outsider history/alerts; shared account shows authorized data. | ✓ | — | ✓ | — |
+| P2-10 | Owned/Shared navigation, detail/history, remove fleet/assigned wording, profile settings entry. | ✓ | — | ✓ | — |
+| P2-11 | Newest first, per-user read/open/mark-all, no filters; owner-only incident ack and incident lifecycle. | ✓ | ✓ | ✓ | — |
+| P2-12 | Authenticated install sessions, token binding, logout/expiry/invalid cleanup and revocation races; background eligibility. | ✓ | ✓ | ✓ | — |
+| P2-13 | Signed Cloudinary Free avatar upload, validation, constrained transform, replace/remove and fallback. | ✓ | ✓ | ✓ | — |
+| P2-14 | Change password with Firebase reauth and clear errors; preserve forgot password recovery. | — | ✓ | ✓ | — |
+| P2-15 | HTTPS Hosting action links, verified App Links, web fallback and malformed/expired/reused tests. | — | ✓ | ✓ | — |
 | P2-16 | Scoped simulator across four classifications, health, incidents, inbox, Pusher/FCM/REST fallback. | ✓ | ✓ | ✓ | ✓ |
 | P2-17 | Onboarding, account switch, sharing, revocation, push lifecycle, App Links and profile. | — | ✓ | ✓ | ✓ |
 | P2-18 | Contract diff, migration runbook, evidence matrix, owner-reviewed PRs and deployment approvals. | ✓ | ✓ | ✓ | ✓ |
