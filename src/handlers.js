@@ -4,6 +4,7 @@ import {CONFIG_DEFAULT,makeKey,keyHash,canRead,canOperate,httpError,parseTime,la
 import {validate,measurement,health,newDevice,editDevice,editConfig,pushToken,deviceId} from './schemas.js';
 import {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus} from './pairing.js';
 import {accessibleDeviceIds,accessLevel,requireAccess} from './access.js';
+import {requirePushSession} from './push-sessions.js';
 import {inviteViewer,myInvitations,acceptInvitation,revokeViewer} from './sharing.js';
 const now=()=>new Date().toISOString();
 const stable=x=>Array.isArray(x)?'['+x.map(stable).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+stable(x[k])).join(',')+'}':JSON.stringify(x);
@@ -267,8 +268,22 @@ export async function markAllAlertsRead(req,res){
 export async function alertDetail(req,res){const db=firebase().db,doc=await db.collection('alerts').doc(req.params.alertId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);await requireAccess(db,req.user,doc.data().deviceId);res.json(clean(doc))}
 export async function acknowledge(req,res){const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId);let alert;
  await db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists)throw httpError('NOT_FOUND',404);alert=snap.data();await requireAccess(db,req.user,alert.deviceId,'OPERATE',tx);if(alert.status==='RESOLVED')throw httpError('ALERT_ALREADY_RESOLVED',409);if(alert.status!=='ACKNOWLEDGED'){tx.update(ref,{status:'ACKNOWLEDGED',acknowledgedAt:now(),acknowledgedBy:req.user.uid});enqueue(tx,db,'alert.acknowledged',alert.deviceId,ref.id,{alertId:ref.id,deviceId:alert.deviceId,uid:req.user.uid})}});res.json({alertId:ref.id,status:'ACKNOWLEDGED'})}
-export async function registerPush(req,res){const p=validate(pushToken,req.body),db=firebase().db,id=tokenId(p.token);const ref=db.collection('notificationTokens').doc(id);
- await db.runTransaction(async tx=>{const existing=await tx.get(ref);if(existing.exists&&existing.data().uid!==req.user.uid&&existing.data().active)throw httpError('TOKEN_ALREADY_REGISTERED',409);tx.set(ref,{...p,uid:req.user.uid,active:true,updatedAt:now()})});res.status(201).json({registered:true})}
+export async function registerPush(req,res){
+ const {sessionId,sessionSecret,...p}=validate(pushToken,req.body);
+ const db=firebase().db,id=tokenId(p.token),ref=db.collection('notificationTokens').doc(id);
+ // A new installation registration is accepted only against an authenticated
+ // active server session. Legacy records remain read-only compatibility for
+ // unclaimed devices until the approved P2_STRICT_OWNERSHIP cutover.
+ if(sessionId||sessionSecret)await requirePushSession(db,req.user.uid,sessionId,sessionSecret);
+ else if(process.env.P2_STRICT_OWNERSHIP==='true')throw httpError('SESSION_REQUIRED',403);
+ await db.runTransaction(async tx=>{
+  const previous=await tx.get(ref);
+  if(previous.exists&&previous.data().uid!==req.user.uid&&previous.data().active)
+   throw httpError('TOKEN_ALREADY_REGISTERED',409);
+  tx.set(ref,{...p,sessionId:sessionId??null,uid:req.user.uid,active:true,updatedAt:now()});
+ });
+ res.status(201).json({registered:true});
+}
 export async function unregisterPush(req,res){const {token}=validate(pushToken,req.body),ref=firebase().db.collection('notificationTokens').doc(tokenId(token));await firebase().db.runTransaction(async tx=>{const s=await tx.get(ref);if(s.exists){if(s.data().uid!==req.user.uid)throw httpError('FORBIDDEN',403);tx.update(ref,{active:false,updatedAt:now()})}});res.json({unregistered:true})}
 export async function pusherAuth(req,res){const {channel_name, socket_id}=req.body??{};if(typeof channel_name!=='string'||typeof socket_id!=='string'||!/^[0-9]+\.[0-9]+$/.test(socket_id))throw httpError('BAD_REQUEST',400);
  let permitted=false;if(channel_name===`private-user-${req.user.uid}`)permitted=true;
