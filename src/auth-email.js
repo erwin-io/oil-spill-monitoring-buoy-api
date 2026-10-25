@@ -10,9 +10,10 @@ const MODES=new Set(['verifyEmail','resetPassword']);
 const EMAIL=/^[^\s@]{1,64}@[^\s@]{1,190}$/;
 const required=()=>[
   'P2_EMAIL_API_KEY','P2_EMAIL_FROM','P2_FIREBASE_WEB_API_KEY','FIREBASE_PROJECT_ID','DEVICE_KEY_PEPPER'
-].every(name=>typeof process.env[name]==='string'&&process.env[name].trim().length>0);
+].every(name=>typeof process.env[name]==='string'&&process.env[name].trim().length>0&&!/^REPLACE_WITH|^YOUR_/i.test(process.env[name].trim()));
 export function authEmailEnabled(){
  return process.env.P2_AUTH_EMAIL_ENABLED==='true'&&required()&&
+  process.env.DEVICE_KEY_PEPPER.length>=32&&
   process.env.FIREBASE_PROJECT_ID==='oil-spill-monitoring-buoy';
 }
 export function actionSettings(mode){
