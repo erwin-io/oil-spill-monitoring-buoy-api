@@ -26,13 +26,13 @@ export const deviceOperatorScope=(req,res,next)=>requireAccess(firebase().db,req
 
 // Shared Firestore minute windows enforce admission across Vercel instances.
 // Scope: state-changing entrypoints; no raw IPs, tokens or secrets are stored.
-export function distributedRateLimit(kind,defaultLimit=60){
+export function distributedRateLimit(kind,defaultLimit=60,now=Date.now){
  return async(req,res,next)=>{
   try{
    const configured=Number(process.env['RATE_LIMIT_'+kind.toUpperCase()]);
    const limit=Number.isSafeInteger(configured)&&configured>0?configured:defaultLimit;
    const principal=req.deviceId?('device:'+req.deviceId):req.user?.uid?('user:'+req.user.uid):('ip:'+(req.ip??'unknown'));
-   const window=Math.floor(Date.now()/60_000);
+   const window=Math.floor(now()/60_000);
    const key=createHash('sha256').update(kind+'|'+principal+'|'+window).digest('hex');
    const ref=firebase().db.collection('_rateLimitWindows').doc(key);
    const accepted=await firebase().db.runTransaction(async tx=>{
@@ -41,7 +41,7 @@ export function distributedRateLimit(kind,defaultLimit=60){
     tx.set(ref,{kind,count:current+1,expiresAt:Timestamp.fromMillis((window+2)*60_000)},{merge:true});
     return true;
    });
-   if(!accepted){res.set('Retry-After',String(Math.max(1,Math.ceil(((window+1)*60_000-Date.now())/1000))));throw httpError('RATE_LIMITED',429)}
+   if(!accepted){res.set('Retry-After',String(Math.max(1,Math.ceil(((window+1)*60_000-now())/1000))));throw httpError('RATE_LIMITED',429)}
    next();
   }catch(error){next(error)}
  };
