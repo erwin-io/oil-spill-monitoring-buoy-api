@@ -10,6 +10,7 @@ import * as h from './handlers.js';
 import * as transfer from './transfer.js';
 import * as sessions from './push-sessions.js';
 import * as avatar from './avatar.js';
+import * as emailAction from './auth-email.js';
 import {dispatch,offlineSweep} from './jobs.js';
 import {userAuth,deviceAuth,requireRole,deviceScope,deviceOwnerScope,deviceOperatorScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
 import {httpError} from './domain.js';
@@ -37,6 +38,12 @@ app.use(rateLimit({windowMs:60000,limit:120,standardHeaders:'draft-7',legacyHead
 const R=(m,path,...handlers)=>app[m](path,...handlers.map(fn=>fn.length===3?fn:asyncRoute(fn)));
 R('get','/health',h.readiness);R('get','/swagger.json',(req,res)=>res.json(swagger));app.use('/swagger',swaggerUi.serve,swaggerUi.setup(swagger));
 const p='/api/v1';
+R('get',p+'/auth/email/config',emailAction.authEmailConfig);
+R('post',p+'/auth/email/verification',emailAction.unverifiedIdentity,
+  distributedRateLimit('auth_email_verify',5),emailAction.requestVerification);
+R('post',p+'/auth/email/password-reset',
+  distributedRateLimit('auth_email_reset',8),emailAction.requestPasswordReset);
+
 R('post',p+'/auth/bootstrap',distributedRateLimit('bootstrap',30),h.bootstrap);R('get',p+'/auth/me',userAuth,h.me);
 R('patch',p+'/auth/me',userAuth,distributedRateLimit('user_change',60),h.updateOwnProfile);
 R('put',p+'/auth/avatar',userAuth,distributedRateLimit('avatar_upload',12),express.raw({type:['image/jpeg','image/png','image/webp'],limit:'2mb'}),avatar.putAvatar);
