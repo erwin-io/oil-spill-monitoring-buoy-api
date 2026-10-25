@@ -285,7 +285,7 @@ export async function registerPush(req,res){
  await db.runTransaction(async tx=>{
   const previous=await tx.get(ref);
   if(previous.exists&&previous.data().uid!==req.user.uid&&previous.data().active&&
-   (!previous.data().sessionId||previous.data().sessionId!==old.data().sessionId))
+   (!previous.data().sessionId||previous.data().sessionId!==old.data()?.sessionId))
    throw httpError('TOKEN_ALREADY_REGISTERED',409);
   tx.set(ref,{...p,sessionId:sessionId??null,uid:req.user.uid,active:true,updatedAt:now()});
  });
