@@ -1,4 +1,5 @@
 import {httpError} from './domain.js';
+import {mailConfigReady,sendTransactionalEmail} from './mail-transport.js';
 
 // Navigation-only link. Any operation still requires the invited Firebase uid,
 // verified email, ACTIVE account and a current pending Firestore invitation.
@@ -14,21 +15,13 @@ export function invitationLink(id,action='invite'){
 export async function sendInvitationEmail(email,id,fetchImpl=fetch){
  const link=invitationLink(id);
  if(process.env.P2_INVITE_EMAIL_ENABLED!=='true')return {status:'DISABLED',link};
- const apiKey=process.env.P2_EMAIL_API_KEY,from=process.env.P2_EMAIL_FROM;
- if(!apiKey||!from)return {status:'NOT_CONFIGURED',link};
+ if(!mailConfigReady())return {status:'NOT_CONFIGURED',link};
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw httpError('INVITEE_EMAIL_INVALID',422);
- try{
-  const response=await fetchImpl('https://api.resend.com/emails',{
-   method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},
-   body:JSON.stringify({
-    from,to:[email],subject:'BlueGuard Buoy — Invitation to view a buoy',
-    text:'You were invited to view a BlueGuard Buoy. On your Android phone, tap this HTTPS link: '+link+
+ const sent=await sendTransactionalEmail({
+  to:email,subject:'BlueGuard Buoy — Invitation to view a buoy',
+  text:'You were invited to view a BlueGuard Buoy. On your Android phone, tap this HTTPS link: '+link+
      '\n\nSign in to the installed BlueGuard Buoy app with your verified invited email and accept in My Buoys.'+
      '\n\nThis link does not sign you in or grant access by itself. If you did not expect this invitation, ignore it.'
-   }),signal:AbortSignal.timeout(15000)
-  });
-  if(!response.ok)return {status:'FAILED',link};
-  const body=await response.json();
-  return {status:typeof body.id==='string'?'ACCEPTED':'FAILED',link};
- }catch{return {status:'FAILED',link}}
+ },{fetch:fetchImpl});
+ return {status:sent?'ACCEPTED':'FAILED',link};
 }
