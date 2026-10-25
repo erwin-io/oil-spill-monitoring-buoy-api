@@ -183,8 +183,13 @@ async function main(){
  const email=dbEmail(raw);
  if(!validEmail(email))fail('INVALID_EMAIL');
  if(!process.env.FIREBASE_PROJECT_ID)fail('Set FIREBASE_PROJECT_ID in ignored .env before running');
- if(process.env.FIRESTORE_EMULATOR_HOST||process.env.FIREBASE_AUTH_EMULATOR_HOST)
-  fail('EMULATOR_VARIABLE_PRESENT: run the emulator-specific integration suite instead');
+ const emulatorIntegration=process.argv.length===3&&process.argv[2]==='--emulator-integration-test';
+ if(process.argv.length>2&&!emulatorIntegration)fail('UNSUPPORTED_ARGUMENTS');
+ const emulatorVars=!!process.env.FIRESTORE_EMULATOR_HOST&&!!process.env.FIREBASE_AUTH_EMULATOR_HOST;
+ if(emulatorIntegration&&(!emulatorVars||!process.env.FIREBASE_PROJECT_ID.startsWith('demo-')))
+  fail('TEST_FLAG_REQUIRES_BOTH_FIREBASE_EMULATORS_AND_DEMO_PROJECT');
+ if(!emulatorIntegration&&(process.env.FIRESTORE_EMULATOR_HOST||process.env.FIREBASE_AUTH_EMULATOR_HOST))
+  fail('EMULATOR_VARIABLE_PRESENT: production reset refuses emulator environment');
  const {db,auth}=firebase();
  report.projectId=process.env.FIREBASE_PROJECT_ID;
  // getUserByEmail is authoritative; Firestore email field cannot pick a target.
