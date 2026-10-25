@@ -37,6 +37,7 @@ const R=(m,path,...handlers)=>app[m](path,...handlers.map(fn=>fn.length===3?fn:a
 R('get','/health',h.readiness);R('get','/swagger.json',(req,res)=>res.json(swagger));app.use('/swagger',swaggerUi.serve,swaggerUi.setup(swagger));
 const p='/api/v1';
 R('post',p+'/auth/bootstrap',distributedRateLimit('bootstrap',30),h.bootstrap);R('get',p+'/auth/me',userAuth,h.me);
+R('patch',p+'/auth/me',userAuth,distributedRateLimit('user_change',60),h.updateOwnProfile);
 R('get',p+'/devices',userAuth,h.listDevices);R('post',p+'/devices',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.registerDevice);
 R('get',p+'/devices/:deviceId',userAuth,deviceScope,h.getDevice);R('patch',p+'/devices/:deviceId',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.updateDevice);
 R('post',p+'/devices/:deviceId/rotate-key',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),h.rotateKey);
