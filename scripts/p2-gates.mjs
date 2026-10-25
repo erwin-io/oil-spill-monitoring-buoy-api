@@ -2,6 +2,7 @@
 // One command. Reads the existing ignored .env automatically; no interactive prompts.
 // All synthetic device/users and ownership mutations run on Firebase emulators ONLY.
 import 'dotenv/config';
+import {mailReadiness,sendTransactionalEmail} from '../src/mail-transport.js';
 import {spawnSync} from 'node:child_process';
 import {createHash,randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
@@ -107,20 +108,22 @@ async function verifyDomain(links){
 }
 async function emailProbe(links){
  if(!links)return;
- if(env.P2_EMAIL_TEST_SEND!=='true'||![env.P2_EMAIL_API_KEY,env.P2_EMAIL_FROM,env.P2_EMAIL_TEST_TO].every(configured)){
-  entry('P2-15-EMAIL-DELIVERY','SKIP','Provide P2_EMAIL_API_KEY / P2_EMAIL_FROM / P2_EMAIL_TEST_TO and P2_EMAIL_TEST_SEND=true for ONE test email');
+ if(env.P2_EMAIL_TEST_SEND!=='true'||!configured(env.P2_EMAIL_TEST_TO)||
+    mailReadiness(env)==='firebase'){
+  entry('P2-15-EMAIL-DELIVERY','SKIP','Set P2_EMAIL_TEST_SEND=true, P2_EMAIL_TEST_TO and selected SMTP/Resend provider credentials');
   return;
  }
  const address=env.P2_EMAIL_TEST_TO.trim();
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)){entry('P2-15-EMAIL-DELIVERY','FAIL','Invalid test recipient');return}
- try{
-  const body={from:env.P2_EMAIL_FROM,to:[address],subject:'BlueGuard Buoy staging App Link test',
-   text:'This is a staging test only. Open your BlueGuard Buoy app after signing in: '+links.example+'\nThis link does not log you in or grant access.'};
-  const response=await request('https://api.resend.com/emails',{
-   method:'POST',headers:{Authorization:'Bearer '+env.P2_EMAIL_API_KEY,'Content-Type':'application/json'},
-   body:JSON.stringify(body)});
-  entry('P2-15-EMAIL-DELIVERY',response.id?'PASS':'FAIL',response.id?'Email provider accepted test send (receipt/open remains to verify)':'Email sender did not return provider receipt');
- }catch(e){entry('P2-15-EMAIL-DELIVERY','FAIL',safe(e))}
+ const sent=await sendTransactionalEmail({
+  to:address,
+  subject:'BlueGuard Buoy staging App Link test',
+  text:'This is a staging test only. Open your BlueGuard Buoy app after signing in: '+links.example+
+       '\nThis link does not log you in or grant access.'
+ });
+ entry('P2-15-EMAIL-DELIVERY',sent?'PASS':'FAIL',
+   sent?'Selected email provider accepted test send (recipient must confirm inbox delivery)':
+        'Selected email provider rejected test send; inspect SMTP credentials and sender quota');
 }
 async function stagingReadOnlyProbe(){
  const base=env.P2_STAGING_API_BASE,token=env.P2_STAGING_ID_TOKEN;
