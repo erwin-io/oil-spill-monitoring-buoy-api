@@ -12,7 +12,7 @@ const sessionId=z.string().uuid();
 const expiry=()=>new Date(Date.now()+lifetimeMs).toISOString();
 const secureHash=secret=>keyHash('pushSession:v1:'+secret,process.env.DEVICE_KEY_PEPPER);
 const refs=(db,id,installationId)=>({session:db.collection('pushSessions').doc(id),
- installation:db.collection('pushInstallations').doc(installationId)});
+ installation:installationId?db.collection('pushInstallations').doc(installationId):null});
 export async function requirePushSession(db,uid,id,secret){
  if(!id||!secret)throw httpError('SESSION_REQUIRED',403);
  validate(sessionId,id);validate(proof,secret);
