@@ -328,13 +328,16 @@ test('Firestore: FCM retires invalid tokens and safely retries transient recipie
 
 
 test('Firestore: distributed per-minute telemetry quota is shared, denies at limit and never stores raw device secret',async()=>{
- const id=device(),limiter=distributedRateLimit('thesis_emulator_quota',2);
+ // Pin the time window: an integration run can cross a real minute boundary between requests.
+ const id=device(),fixedNow=Date.now();
+ const limiter=distributedRateLimit('thesis_emulator_quota',2,()=>fixedNow);
  const req={deviceId:id,ip:'203.0.113.5',get:()=>'',method:'POST'};
  const headers={};const res={set:(key,val)=>{headers[key]=val;return res;}};
  const attempt=()=>new Promise(resolve=>{void limiter(req,res,(err)=>resolve(err??null));});
  assert.equal(await attempt(),null);
  assert.equal(await attempt(),null);
  const error=await attempt();
+ assert.ok(error,'third admission in the same minute must be rate-limited');
  assert.equal(error.code,'RATE_LIMITED');
  assert.equal(error.status,429);
  assert.ok(Number(headers['Retry-After'])>=1);
