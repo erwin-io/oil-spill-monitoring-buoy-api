@@ -1,6 +1,7 @@
 import {firebase} from './firebase.js';
 import {canRead,retryDelay,alertKey,httpError} from './domain.js';
 import {accessLevel} from './access.js';
+import {isEligiblePushSession} from './push-sessions.js';
 const iso=()=>new Date().toISOString();
 function requireJobAuth(req){const secret=process.env.CRON_SECRET;const presented=req.get('authorization');if(!secret||secret.length<24||presented!==`Bearer ${secret}`)throw httpError('JOB_UNAUTHORIZED',401)}
 /**
@@ -13,6 +14,8 @@ function requireJobAuth(req){const secret=process.env.CRON_SECRET;const presente
 export async function pushAlert(db,messaging,job,ref){
  const alert=await db.collection('alerts').doc(job.payload.alertId).get();
  if(!alert.exists)return;
+ const device=await db.collection('devices').doc(job.deviceId).get();
+ const requiresSession=process.env.P2_STRICT_OWNERSHIP==='true'||!!device.data()?.ownerUid;
  const userCache=new Map();
  let cursor=null;
  let firstFailure=null;
@@ -31,6 +34,8 @@ export async function pushAlert(db,messaging,job,ref){
    }
    const user=userCache.get(uid);
    if(!user||user.status!=='ACTIVE'||await accessLevel(db,user,job.deviceId)==='NONE')continue;
+   if(value.sessionId){if(!await isEligiblePushSession(db,value))continue}
+   else if(requiresSession)continue;
    const receipt=ref.collection('fcmReceipts').doc(token.id);
    if((await receipt.get()).exists)continue;
    eligible.push({token,receipt});
