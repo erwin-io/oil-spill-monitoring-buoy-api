@@ -15,6 +15,7 @@
     "verify:existing-firebase": "node scripts/verify-existing-firebase.mjs",
     "verify:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-thesis.ps1",
     "sim:pipeline": "node scripts/simulator-launch.mjs",
+    "verify:p2": "node scripts/p2-gates.mjs",
     "sim:telemetry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/telemetry-lab.ps1"
   },
   "dependencies": {
