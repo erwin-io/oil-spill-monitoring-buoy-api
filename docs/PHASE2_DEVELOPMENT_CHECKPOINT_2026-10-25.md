@@ -142,3 +142,18 @@ This is a continuation of the original checkpoint, **not** a replacement for the
 - P2-03 lost-owner independent-proof recovery remains **operator-gated and not implemented as an automatic takeover**. P2-06 actual cloud inventory/backup, P2-12 durable secure offline-logout revocation retry, staging FCM/Pusher, and installed-device tests remain **OPEN**.
 - P2-14 password-change implementation passed mobile CI but is not yet accepted on a real Android device or cross-provider account matrix.
 - The original 103 official checklist rows remain unchanged, and all 18 proposed Phase 2 additions remain a separate reviewable proposal.
+
+
+## Owner-authorized conditional merge review and further Phase 2 development — 2026-10-25
+- Project Owner explicitly permitted **review/merge/close only if no remaining concern**; this does NOT waive separately held production deployment, re-provisioning or device cutover gates.
+- **Mobile PR #3 merged and closed** after successful CI review, GitHub merge SHA `dbd54fd9b7b0f44e30089cdf515369fcc37f0b15`. The change only updates a Google Sign-In structural test assertion; existing native behavior remains.
+- **API PRs #5/#6 held open/draft**: PR #5 alone would expose a claimed device to legacy ADMIN/ACL reads pending PR #6; GitHub-to-Vercel main auto-deploy impact not independently controlled. Physical PAIR, owner-loss recovery identity proof, clean re-provision/backup/rollback, and push session/offline acceptance remain unproven. Code CI is not a deployment approval.
+- **Mobile PR #4 held open/draft**: retargeted to `main` after PR #3 merged; backend API PR #5/#6 remains unmerged. QR scanner/PAIR/background FCM and cross-account staging gates require real Android/backend evidence.
+- Gate findings were recorded as non-blocking-to-development GitHub **COMMENT** reviews on API #5/#6 and Mobile #4. Details: [merge review and continuation](./PHASE2_MERGE_REVIEW_AND_CONTINUATION_2026-10-25.md).
+- **P2-07:** paginated `GET /api/v1/devices` (stable ID ordering, nextCursor and outsider isolation), mobile all-pages aggregation with repeated-cursor protection, API/Auth emulator and mobile tests. No device beyond first 100 is silently dropped.
+- **P2-11:** personal inbox unreadCount includes OPEN, ACKNOWLEDGED, RESOLVED separately from OPEN-only incident count; own per-device read watermarks and individual episode reads. Old open-only test expectations were updated, new resolved-incident test added.
+- **P2-13:** own display-name update supported by strict authenticated `PATCH /auth/me`, no role/status/email mutation, mobile editor and session-switch guards, emulator/unit tests. Cloudinary photo and provider setup still incomplete/operator-gated.
+- API development CI `40167102835` at code commit `9785961a3007abbc2a70d975b6a17c924965e2db`: **success in all four** jobs, incl. Firestore emulator and Windows.
+- Mobile development CI `40167125792` at code commit `61a836201c63ebcbceb5c93971effc2795ae7a14`: **success** on install-test-build and Android APK compilation. This does not establish installed device acceptance.
+- Documentation changes after validated code SHA may generate additional CI runs; verify final branch HEAD before later merge.
+- No live data migration, deployment, cloud config change, checklist edit, production credential rotation, physical hardware acceptance or ownership cutover occurred.
