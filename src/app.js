@@ -8,6 +8,7 @@ import swagger from './swagger.js';
 import {randomUUID} from 'node:crypto';
 import * as h from './handlers.js';
 import * as transfer from './transfer.js';
+import * as sessions from './push-sessions.js';
 import {dispatch,offlineSweep} from './jobs.js';
 import {userAuth,deviceAuth,requireRole,deviceScope,deviceOwnerScope,deviceOperatorScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
 import {httpError} from './domain.js';
@@ -59,6 +60,9 @@ R('get',p+'/device/config',deviceAuth,h.deviceConfig);R('get',p+'/devices/:devic
 R('put',p+'/devices/:deviceId/config',userAuth,deviceOperatorScope,distributedRateLimit('user_change',60),h.putConfig);
 R('post',p+'/notifications/read-all',userAuth,distributedRateLimit('user_change',60),h.markAllAlertsRead);
 R('get',p+'/alerts',userAuth,h.alerts);R('get',p+'/alerts/:alertId',userAuth,h.alertDetail);R('post',p+'/alerts/:alertId/read',userAuth,distributedRateLimit('user_change',60),h.markAlertRead);R('patch',p+'/alerts/:alertId/acknowledge',userAuth,distributedRateLimit('user_change',60),h.acknowledge);
+R('post',p+'/notifications/sessions',userAuth,distributedRateLimit('push_session',12),sessions.createPushSession);
+R('post',p+'/notifications/sessions/:sessionId/refresh',userAuth,distributedRateLimit('push_session',12),sessions.refreshPushSession);
+R('delete',p+'/notifications/sessions/:sessionId',userAuth,distributedRateLimit('push_session',12),sessions.revokePushSession);
 R('post',p+'/notifications/register-device',userAuth,distributedRateLimit('push_register',30),h.registerPush);R('delete',p+'/notifications/unregister-device',userAuth,distributedRateLimit('push_register',30),h.unregisterPush);
 R('post',p+'/realtime/auth',userAuth,distributedRateLimit('realtime_auth',120),h.pusherAuth);
 R('get',p+'/jobs/dispatch',dispatch);R('get',p+'/jobs/offline',offlineSweep);
