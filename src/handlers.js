@@ -4,7 +4,7 @@ import {CONFIG_DEFAULT,makeKey,keyHash,canRead,canOperate,httpError,parseTime,la
 import {validate,measurement,health,newDevice,editDevice,editConfig,pushToken,deviceId} from './schemas.js';
 import {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus} from './pairing.js';
 import {accessibleDeviceIds,accessLevel,requireAccess} from './access.js';
-import {requirePushSession} from './push-sessions.js';
+import {requirePushSession,isEligiblePushSession} from './push-sessions.js';
 import {inviteViewer,myInvitations,acceptInvitation,revokeViewer} from './sharing.js';
 const now=()=>new Date().toISOString();
 const stable=x=>Array.isArray(x)?'['+x.map(stable).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+stable(x[k])).join(',')+'}':JSON.stringify(x);
@@ -276,9 +276,16 @@ export async function registerPush(req,res){
  // unclaimed devices until the approved P2_STRICT_OWNERSHIP cutover.
  if(sessionId||sessionSecret)await requirePushSession(db,req.user.uid,sessionId,sessionSecret);
  else if(process.env.P2_STRICT_OWNERSHIP==='true')throw httpError('SESSION_REQUIRED',403);
+ // A single Android installation keeps its FCM token across account switches.
+ // Only an OLD, provably ineligible session token may be rebound to another UID.
+ const old=await ref.get();
+ const previousActiveForAnother=old.exists&&old.data().uid!==req.user.uid&&old.data().active;
+ if(previousActiveForAnother&&(!old.data().sessionId||
+    await isEligiblePushSession(db,old.data())))throw httpError('TOKEN_ALREADY_REGISTERED',409);
  await db.runTransaction(async tx=>{
   const previous=await tx.get(ref);
-  if(previous.exists&&previous.data().uid!==req.user.uid&&previous.data().active)
+  if(previous.exists&&previous.data().uid!==req.user.uid&&previous.data().active&&
+   (!previous.data().sessionId||previous.data().sessionId!==old.data().sessionId))
    throw httpError('TOKEN_ALREADY_REGISTERED',409);
   tx.set(ref,{...p,sessionId:sessionId??null,uid:req.user.uid,active:true,updatedAt:now()});
  });
