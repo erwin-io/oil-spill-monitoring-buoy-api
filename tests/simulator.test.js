@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {checkSandbox,sampleMeasurement,readTelemetryPlan} from '../scripts/simulator-pipeline.mjs';
+import {checkSandbox,sampleMeasurement,readTelemetryPlan,safeFcmErrorCode} from '../scripts/simulator-pipeline.mjs';
 import {readFileSync} from 'node:fs';
 
 const base={
@@ -57,4 +57,11 @@ test('non-alert measurements cannot be configured to send accidental FCM from la
  }
  const bad={scenarios:{bad:{steps:[{kind:'arbitrary'}],expectedAlerts:[]}}};
  assert.throws(()=>readTelemetryPlan('bad',bad),/SCENARIO_STEP_KIND_INVALID/);
+});
+
+test('FCM failure diagnostics expose only safe SDK codes and never sensitive error messages',()=>{
+ assert.equal(safeFcmErrorCode({code:'messaging/registration-token-not-registered',message:'token-secret'}),'messaging/registration-token-not-registered');
+ assert.equal(safeFcmErrorCode({code:'messaging/mismatched-credential',message:'service-account-secret'}),'messaging/mismatched-credential');
+ assert.equal(safeFcmErrorCode({code:'not safe token-secret'}),'FCM_UNKNOWN_ERROR');
+ assert.equal(safeFcmErrorCode({message:'private data'}),'FCM_UNKNOWN_ERROR');
 });
