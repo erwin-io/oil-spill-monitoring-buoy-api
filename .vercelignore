@@ -1,0 +1,17 @@
+# Prevent upload of workstation-only environment and provider credentials.
+# Git ignore rules alone do not guarantee Vercel CLI upload exclusions.
+.env
+.env.*
+secrets/
+.test-output/
+scripts/telemetry-lab.config.json
+firestore-debug.log
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+firebase-admin.json
+*service-account*.json
+*service_account*.json
+credentials.json
