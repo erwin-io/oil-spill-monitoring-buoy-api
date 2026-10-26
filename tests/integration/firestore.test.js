@@ -100,15 +100,27 @@ test('Firestore: offline recovery and recurring outage generate distinct deliver
  const alertId=alertKey('OFFLINE',id,'ACTIVE');
  const alertRef=db.collection('alerts').doc(alertId);
  assert.equal((await alertRef.get()).data().status,'OPEN');
+ const offlineZero=await db.collection('notificationOutbox').doc(alertKey('device.offline',id,'0')).get();
+ assert.equal(offlineZero.exists,true,'first offline episode must produce private presence event');
+ assert.deepEqual(offlineZero.data().payload,{deviceId:id,status:'OFFLINE'});
  await ref.update({lastSeenAt:iso()});
  await offlineSweep(request,response());
  assert.equal((await alertRef.get()).data().status,'RESOLVED');
+ const onlineZero=await db.collection('notificationOutbox').doc(alertKey('device.online',id,'0')).get();
+ assert.equal(onlineZero.exists,true,'recovery must produce a distinct private online event');
+ assert.deepEqual(onlineZero.data().payload,{deviceId:id,status:'ONLINE'});
  await ref.update({lastSeenAt:'2026-10-20T00:00:00.000Z'});
  await offlineSweep(request,response());
  assert.equal((await alertRef.get()).data().status,'OPEN');
  assert.equal((await alertRef.get()).data().episode,1);
  const next=await db.collection('notificationOutbox').doc(alertKey('alert.created',id,alertId+'_1')).get();
  assert.equal(next.exists,true);
+ const offlineOne=await db.collection('notificationOutbox').doc(alertKey('device.offline',id,'1')).get();
+ assert.equal(offlineOne.exists,true,'repeated outage has an independent presence event');
+ await offlineSweep(request,response());
+ const presence=(await db.collection('notificationOutbox').where('deviceId','==',id).get()).docs
+  .filter(x=>x.data().type==='device.offline'||x.data().type==='device.online');
+ assert.equal(presence.length,3,'repeated sweep must not duplicate presence transitions');
 });
 
 test('Firestore: repeated health faults do not spam and recovery permits new episode',async()=>{
