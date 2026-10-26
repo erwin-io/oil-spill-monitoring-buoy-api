@@ -41,8 +41,8 @@ try{
   response.ok&&body.status==='ok'&&body.database==='ready',
   'HTTP '+response.status+', database '+String(body.database??'unknown'));
 }catch(e){record('Live API Firebase health',false,String(e.message).slice(0,160));}
-record('Production worker & Vercel flags','SKIP',
- 'Requires authorized Vercel team inspection; no job was triggered.');
+report.checks.push({name:'Production worker & Vercel flags',result:'SKIPPED',
+ detail:'Requires authorized Vercel team inspection; no job was triggered.'});
 report.result=report.checks.some(x=>x.result==='FAIL')?'FAIL':'PARTIAL';
 mkdirSync('.test-output',{recursive:true});
 const path=join('.test-output','production-firebase-readonly.json');
