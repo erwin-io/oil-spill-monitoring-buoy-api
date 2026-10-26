@@ -110,7 +110,11 @@ async function livePusher(base,token,deviceId,cluster,key,expected=['measurement
   socket.addEventListener('error',()=>reject(Error('PUSHER_SOCKET_ERROR')));
   socket.addEventListener('message',async e=>{
    let msg;try{msg=JSON.parse(String(e.data))}catch{return}
-   if(expected.includes(msg.event) && msg.channel===channel)received.add(msg.event);
+   // Observe presence transitions even when the initial telemetry-only
+   // wait list does not contain them. The later offline/online exercise
+   // waits for these events on this same authenticated private channel.
+   if(([...expected,'device.offline','device.online'].includes(msg.event)) && msg.channel===channel)
+    received.add(msg.event);
    if(msg.event==='pusher:connection_established'){
     try{
      const data=typeof msg.data==='string'?JSON.parse(msg.data):msg.data;
