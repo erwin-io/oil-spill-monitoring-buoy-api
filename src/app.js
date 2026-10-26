@@ -75,6 +75,7 @@ R('post',p+'/notifications/sessions',userAuth,distributedRateLimit('push_session
 R('post',p+'/notifications/sessions/:sessionId/refresh',userAuth,distributedRateLimit('push_session',12),sessions.refreshPushSession);
 R('delete',p+'/notifications/sessions/:sessionId',userAuth,distributedRateLimit('push_session',12),sessions.revokePushSession);
 R('post',p+'/notifications/register-device',userAuth,distributedRateLimit('push_register',30),h.registerPush);R('delete',p+'/notifications/unregister-device',userAuth,distributedRateLimit('push_register',30),h.unregisterPush);
+R('get',p+'/realtime/config',userAuth,(req,res)=>{res.set('Cache-Control','no-store');const key=process.env.PUSHER_KEY??'',cluster=process.env.PUSHER_CLUSTER??'';const enabled=process.env.PUSHER_ENABLED==='true'&&/^[A-Za-z0-9_-]{5,120}$/.test(key)&&/^[a-z0-9-]{2,20}$/.test(cluster);res.json(enabled?{enabled:true,key,cluster}:{enabled:false});});
 R('post',p+'/realtime/auth',userAuth,distributedRateLimit('realtime_auth',120),h.pusherAuth);
 R('get',p+'/jobs/dispatch',dispatch);R('get',p+'/jobs/offline',offlineSweep);
 app.use((req,res,next)=>next(httpError('NOT_FOUND',404)));app.use(errorHandler);
