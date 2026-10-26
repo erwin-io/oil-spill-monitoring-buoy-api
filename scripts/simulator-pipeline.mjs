@@ -52,6 +52,12 @@ export function sampleMeasurement(id,classification='NORMAL'){
   spectral:{f415:8,f445:14,f480:21,f515:11,f555:7,f590:4}};
 }
 const safeResult=(ok,details)=>({status:ok?'PASS':'FAIL',...details});
+/** Expose only Firebase Admin error identifiers, never SDK messages or secrets. */
+export function safeFcmErrorCode(error){
+ const value=typeof error?.code==='string'?error.code:'FCM_UNKNOWN_ERROR';
+ return /^[a-zA-Z0-9_/-]{1,100}$/.test(value)?value:'FCM_UNKNOWN_ERROR';
+}
+
 
 /** Validate editable fixtures before creating any emulator user/device. */
 export function readTelemetryPlan(name, fixture){
@@ -245,15 +251,53 @@ async function run(){
      (!plan || plan.expectedAlerts.includes(d.data().payload?.type)));
    if(!plan&&!selected.some(d=>d.data().payload?.type==='PETROLEUM'))
     throw Error('No emulator petroleum notification job');
-   // Only send real FCM messages for actual alert.created jobs produced by the API.
-   // NORMAL, INTERFERENCE and below-threshold PETROLEUM NEVER trigger an FCM send.
-   // Firebase Firestore data and per-token receipts remain emulator-only.
+   // Observe only provider error codes, never registration tokens, messages
+   // (which may include identifiers), service-account data, or FCM payloads.
+   // Keep the production pushAlert() implementation unchanged.
+   const provider={calls:0,accepted:0,rejected:0,errorCodes:[]};
+   const messaging=getMessaging(externalApp);
+   const observedMessaging={
+    async sendEachForMulticast(message){
+     provider.calls++;
+     try{
+      const result=await messaging.sendEachForMulticast(message);
+      for(const response of result.responses){
+       if(response.success)provider.accepted++;
+       else{
+        provider.rejected++;
+        provider.errorCodes.push(safeFcmErrorCode(response.error));
+       }
+      }
+      return result;
+     }catch(error){
+      provider.rejected++;
+      provider.errorCodes.push(safeFcmErrorCode(error));
+      throw error;
+     }
+    }
+   };
    for(const entry of selected){
-    await pushAlert(db,getMessaging(externalApp),entry.data(),entry.ref);
+    const alertType=entry.data().payload?.type;
+    try{
+     await pushAlert(db,observedMessaging,entry.data(),entry.ref);
+    }catch(error){
+     // Only a sanitized Firebase code is surfaced to the test operator.
+     throw Error('FCM_SEND_FAILED:'+String(alertType)+
+      ':code='+safeFcmErrorCode(error)+
+      ':providerCalls='+provider.calls+
+      ':responseCodes='+([...new Set(provider.errorCodes)].join(',')||'none'));
+    }
     const receipts=await entry.ref.collection('fcmReceipts').get();
-    if(!receipts.docs.some(d=>d.data().status==='SENT'))throw Error('FCM_PROVIDER_NOT_ACCEPTED:'+entry.data().payload?.type);
+    if(!receipts.docs.some(d=>d.data().status==='SENT')){
+     const state=provider.calls===0?'NO_ELIGIBLE_RECIPIENT_OR_SESSION':
+      provider.rejected>0?'PROVIDER_REJECTED':'NO_SENT_RECEIPT';
+     throw Error('FCM_PROVIDER_NOT_ACCEPTED:'+String(alertType)+
+      ':state='+state+
+      ':providerCalls='+provider.calls+
+      ':responseCodes='+([...new Set(provider.errorCodes)].join(',')||'none'));
+    }
     report.fcmSendCount++;
-    report.checks.push(safeResult(true,{step:'Real FCM provider accepted simulated alert',type:entry.data().payload?.type}));
+    report.checks.push(safeResult(true,{step:'Real FCM provider accepted simulated alert',type:alertType}));
    }
    if(plan && selected.length!==plan.expectedAlerts.length)throw Error('FCM_ELIGIBLE_ALERT_COUNT_MISMATCH');
    report.realFCMAccepted=selected.length>0;
