@@ -3,6 +3,21 @@ import {canRead,retryDelay,alertKey,httpError} from './domain.js';
 import {accessLevel} from './access.js';
 import {isEligiblePushSession} from './push-sessions.js';
 const iso=()=>new Date().toISOString();
+/** Explicit private-device presence transitions. Reuse the OFFLINE alert episode
+ * as a stable event id; the outbox job ref is unique across recoveries.
+ * Subscribers must refetch device state from the authenticated REST API. */
+export function presenceJob(deviceId,status,episode){
+ const type=status==='ONLINE'?'device.online':'device.offline';
+ if(!Number.isSafeInteger(episode)||episode<0)throw Error('Invalid presence episode');
+ return {id:alertKey(type,deviceId,String(episode)),
+  value:{type,deviceId,payload:{deviceId,status},status:'PENDING',attempts:0,
+   nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null}};
+}
+function enqueuePresence(tx,db,deviceId,status,episode){
+ const job=presenceJob(deviceId,status,episode);
+ tx.create(db.collection('notificationOutbox').doc(job.id),job.value);
+}
+
 function requireJobAuth(req){const secret=process.env.CRON_SECRET;const presented=req.get('authorization');if(!secret||secret.length<24||presented!==`Bearer ${secret}`)throw httpError('JOB_UNAUTHORIZED',401)}
 /**
  * Paginate tokens instead of truncating notifications at the first 1,000.
@@ -138,6 +153,7 @@ export async function offlineSweep(req,res){
      type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},
      status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null
     });
+    enqueuePresence(tx,db,doc.id,'OFFLINE',0);
     return 'marked';
    }
    if(offline&&existing.exists&&existing.data().status==='RESOLVED'){
@@ -147,10 +163,12 @@ export async function offlineSweep(req,res){
      type:'alert.created',deviceId:doc.id,payload:{deviceId:doc.id,alertId:ref.id,type:'OFFLINE'},
      status:'PENDING',attempts:0,nextAttemptAt:iso(),createdAt:iso(),leaseUntil:null
     });
+    enqueuePresence(tx,db,doc.id,'OFFLINE',episode);
     return 'marked';
    }
    if(!offline&&existing.exists&&['OPEN','ACKNOWLEDGED'].includes(existing.data().status)){
     tx.update(ref,{status:'RESOLVED',resolvedAt:iso()});
+    enqueuePresence(tx,db,doc.id,'ONLINE',existing.data().episode??0);
     return 'recovered';
    }
    return null;
