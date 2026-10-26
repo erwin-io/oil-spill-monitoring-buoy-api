@@ -99,6 +99,12 @@ async function localServer(app){
  await new Promise((resolve,reject)=>{if(server.listening)return resolve();server.once('listening',resolve);server.once('error',reject)});
  return{base:'http://127.0.0.1:'+server.address().port,close:()=>new Promise(r=>server.close(r))};
 }
+/** True only for expected telemetry events or the presence events checked
+ * later in the same test run, and ONLY for the subscribed private channel. */
+export function shouldRecordPusherEvent(expected,event,channel,subscribedChannel){
+ return channel===subscribedChannel &&
+  (expected.includes(event)||event==='device.offline'||event==='device.online');
+}
 /** Real Pusher websocket with auth from the same emulator-backed API. */
 async function livePusher(base,token,deviceId,cluster,key,expected=['measurement.created','health.updated','alert.created']){
  const received=new Set();
@@ -113,8 +119,7 @@ async function livePusher(base,token,deviceId,cluster,key,expected=['measurement
    // Observe presence transitions even when the initial telemetry-only
    // wait list does not contain them. The later offline/online exercise
    // waits for these events on this same authenticated private channel.
-   if(([...expected,'device.offline','device.online'].includes(msg.event)) && msg.channel===channel)
-    received.add(msg.event);
+   if(shouldRecordPusherEvent(expected,msg.event,msg.channel,channel)) received.add(msg.event);
    if(msg.event==='pusher:connection_established'){
     try{
      const data=typeof msg.data==='string'?JSON.parse(msg.data):msg.data;

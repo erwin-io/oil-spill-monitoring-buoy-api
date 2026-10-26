@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {checkSandbox,sampleMeasurement,readTelemetryPlan,safeFcmErrorCode} from '../scripts/simulator-pipeline.mjs';
+import {checkSandbox,sampleMeasurement,readTelemetryPlan,safeFcmErrorCode,shouldRecordPusherEvent} from '../scripts/simulator-pipeline.mjs';
 import {readFileSync} from 'node:fs';
 
 const base={
@@ -64,4 +64,15 @@ test('FCM failure diagnostics expose only safe SDK codes and never sensitive err
  assert.equal(safeFcmErrorCode({code:'messaging/mismatched-credential',message:'service-account-secret'}),'messaging/mismatched-credential');
  assert.equal(safeFcmErrorCode({code:'not safe token-secret'}),'FCM_UNKNOWN_ERROR');
  assert.equal(safeFcmErrorCode({message:'private data'}),'FCM_UNKNOWN_ERROR');
+});
+
+test('Pusher simulator captures online/offline transitions after telemetry wait, scoped to private channel',()=>{
+ const expected=['measurement.created','health.updated','alert.created'];
+ const scoped='private-device-sim_abc';
+ for(const event of [...expected,'device.offline','device.online']){
+  assert.equal(shouldRecordPusherEvent(expected,event,scoped,scoped),true,event);
+  assert.equal(shouldRecordPusherEvent(expected,event,'private-device-other',scoped),false,event);
+ }
+ assert.equal(shouldRecordPusherEvent(expected,'pusher:ping',scoped,scoped),false);
+ assert.equal(shouldRecordPusherEvent(expected,'unknown.event',scoped,scoped),false);
 });
