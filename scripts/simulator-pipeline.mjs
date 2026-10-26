@@ -123,14 +123,17 @@ async function livePusher(base,token,deviceId,cluster,key,expected=['measurement
   });
  });
  try{await ready}catch(e){socket.close();throw e}
+ const waitFor=async events=>{
+  const until=Date.now()+12000;
+  while(Date.now()<until&&!events.every(event=>received.has(event)))await new Promise(r=>setTimeout(r,200));
+  if(!events.every(event=>received.has(event)))
+   throw Error('PUSHER_MISSING_EVENTS:'+events.filter(e=>!received.has(e)).join(','));
+  return [...received];
+ };
  return {
   received,
-  async wait(){
-   const until=Date.now()+12000;
-   while(Date.now()<until&&!expected.every(event=>received.has(event)))await new Promise(r=>setTimeout(r,200));
-   if(!expected.every(event=>received.has(event)))throw Error('PUSHER_MISSING_EVENTS:'+expected.filter(e=>!received.has(e)).join(','));
-   return [...received];
-  },
+  wait:()=>waitFor(expected),
+  waitFor,
   close(){socket.close();}
  };
 }
@@ -238,9 +241,41 @@ async function run(){
     const recent=[...plan.steps].reverse().find(s=>s.kind==='measurement');
     if(recent && refreshed.body.classification!==recent.classification)throw Error('Realtime REST reconciliation failed');
    } else if(refreshed.body.classification!=='PETROLEUM')throw Error('Realtime callback REST reconciliation failed');
+   // Full B-21 scenario: additionally verify hosted Pusher presence delivery,
+   // using the same transactional production offline sweep + outbox dispatcher
+   // against ONLY the disposable local Firestore/Auth emulators.
+   if(scenarioName==='all'){
+    const credential=process.env.CRON_SECRET;
+    process.env.CRON_SECRET='sim-cron-'+suffix+'-secret-0123456789';
+    const cron={authorization:'Bearer '+process.env.CRON_SECRET};
+    try{
+     await db.collection('devices').doc(deviceId).update({lastSeenAt:'2020-01-01T00:00:00.000Z'});
+     const off=await request(local.base,'GET','/api/v1/jobs/offline',undefined,cron);
+     if(off.status!==200||off.body.newOffline!==1)throw Error('OFFLINE_SWEEP_NOT_MARKED');
+     const offJobs=await request(local.base,'GET','/api/v1/jobs/dispatch',undefined,cron);
+     if(offJobs.status!==200||offJobs.body.processed<2)throw Error('OFFLINE_OUTBOX_NOT_DISPATCHED');
+     await pusher.waitFor(['device.offline']);
+     const offlineRead=await request(local.base,'GET','/api/v1/devices/'+deviceId,undefined,v);
+     if(offlineRead.status!==200||offlineRead.body.lastSeenAt!=='2020-01-01T00:00:00.000Z')
+      throw Error('OFFLINE_AUTHORITATIVE_API_REFETCH_MISMATCH');
+
+     const restored=iso();
+     await db.collection('devices').doc(deviceId).update({lastSeenAt:restored});
+     const back=await request(local.base,'GET','/api/v1/jobs/offline',undefined,cron);
+     if(back.status!==200||back.body.recovered!==1)throw Error('ONLINE_SWEEP_NOT_RECOVERED');
+     const onlineJobs=await request(local.base,'GET','/api/v1/jobs/dispatch',undefined,cron);
+     if(onlineJobs.status!==200||onlineJobs.body.processed<1)throw Error('ONLINE_OUTBOX_NOT_DISPATCHED');
+     await pusher.waitFor(['device.online']);
+     const onlineRead=await request(local.base,'GET','/api/v1/devices/'+deviceId,undefined,v);
+     if(onlineRead.status!==200||onlineRead.body.lastSeenAt!==restored)
+      throw Error('ONLINE_AUTHORITATIVE_API_REFETCH_MISMATCH');
+     report.checks.push(safeResult(true,{step:'Real Pusher private device.offline/device.online transitions delivered; authorized API refetch verified, emulator-only'}));
+    }finally{if(credential===undefined)delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET=credential}
+   }
    report.realPusher=true;
-   report.pusherEvents=received;
-   report.checks.push(safeResult(true,{step:'Real Pusher delivered private events; API REST refetch matches latest data',events:received}));
+   report.pusherEvents=[...pusher.received];
+   report.checks.push(safeResult(true,{step:'Real Pusher delivered private events; API REST refetch matches latest data',events:report.pusherEvents}));
   }
   if(flags.has('--with-fcm')){
    const serviceJSON=JSON.parse(readFileSync(process.env.THESIS_FCM_CREDENTIALS_FILE,'utf8'));
