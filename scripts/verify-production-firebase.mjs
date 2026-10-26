@@ -3,14 +3,11 @@
 import {spawnSync} from 'node:child_process';
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {indexSignature,missingRequiredIndexes} from './firestore-index-signature.mjs';
 const project='oil-spill-monitoring-buoy';
 const root=process.cwd();
 const report={project,readOnly:true,time:new Date().toISOString(),checks:[]};
 const record=(name,pass,detail)=>{report.checks.push({name,result:pass?'PASS':'FAIL',detail});};
-function signature(entry){
- return [entry.collectionGroup,entry.queryScope,
-  ...(entry.fields??[]).map(f=>f.fieldPath+':'+(f.order??f.arrayConfig??''))].join('|');
-}
 const expected=JSON.parse(readFileSync('firestore.indexes.json','utf8')).indexes;
 let result;
 try{
@@ -24,10 +21,9 @@ try{
  }else{
   const text=run.stdout.trim(),start=text.indexOf('{'),end=text.lastIndexOf('}');
   const remote=JSON.parse(text.slice(start,end+1));
-  const found=new Set((remote.indexes??[]).map(signature));
-  const missing=expected.filter(index=>!found.has(signature(index)));
+  const missing=missingRequiredIndexes(expected,remote.indexes??[]);
   record('Required deployed composite indexes',missing.length===0,
-   missing.length?'Missing: '+missing.map(signature).join(', '):
+   missing.length?'Missing: '+missing.map(indexSignature).join(', '):
    expected.length+' required index definitions are deployed');
  }
 }catch(e){record('Production Firestore indexes',false,String(e.message).slice(0,160));}
