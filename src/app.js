@@ -25,7 +25,14 @@ const app=express();app.disable('x-powered-by');app.set('trust proxy',1);
 const nativeOrigins=['https://localhost','capacitor://localhost'];
 const origins=new Set([...nativeOrigins,...(process.env.ALLOWED_ORIGINS??'').split(',').map(x=>x.trim()).filter(Boolean)]);
 app.use((req,res,next)=>helmet(req.path.startsWith('/swagger')?{contentSecurityPolicy:false}:{})(req,res,next));
-app.use(cors({origin:(o,cb)=>!o||origins.has(o)?cb(null,true):cb(httpError('ORIGIN_DENIED',403))}));
+// Browser/Capacitor preflight responses can be cached by the WebView for one
+// hour. This does not cache protected GET data and does not relax the origin
+// allowlist. DevTools "Disable cache" can defeat browser-side caching.
+app.use(cors({
+ origin:(o,cb)=>!o||origins.has(o)?cb(null,true):cb(httpError('ORIGIN_DENIED',403)),
+ maxAge:3600,
+ exposedHeaders:['X-BlueGuard-Cache','X-Request-Id','Server-Timing']
+}));
 app.use(express.json({limit:'24kb',strict:true}));app.use((req,res,next)=>{
  req.requestId=randomUUID();res.set('x-request-id',req.requestId);
  const started=Date.now();
