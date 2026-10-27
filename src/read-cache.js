@@ -1,0 +1,112 @@
+// BlueGuard warm-instance response cache. Never a substitute for Firebase auth
+// or ACL checks, and never shared between Vercel function instances.
+const DEFAULT_MAX_ENTRIES=400;
+const DEFAULT_MAX_BYTES=8*1024*1024;
+const DEFAULT_ENTRY_BYTES=256*1024;
+const cacheHeader='X-BlueGuard-Cache';
+const queryString=query=>{
+ const entries=Object.entries(query??{}).sort(([a],[b])=>a.localeCompare(b));
+ return JSON.stringify(entries);
+};
+
+export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
+ maxBytes=DEFAULT_MAX_BYTES,maxEntryBytes=DEFAULT_ENTRY_BYTES}={}){
+ const records=new Map();
+ let bytes=0,epoch=0;
+ const remove=key=>{
+  const item=records.get(key);
+  if(!item)return;
+  bytes-=item.size;
+  records.delete(key);
+ };
+ const evict=()=>{
+  while(records.size>maxEntries||bytes>maxBytes){
+   const key=records.keys().next().value;
+   if(key===undefined)break;
+   remove(key);
+  }
+ };
+ const hit=key=>{
+  const entry=records.get(key);
+  if(!entry)return null;
+  if(entry.expiresAt<=now()){remove(key);return null;}
+  records.delete(key);records.set(key,entry); // LRU
+  return entry;
+ };
+ const put=(key,body,tags,ttlMs)=>{
+  if(typeof body!=='string')return;
+  const size=Buffer.byteLength(body,'utf8');
+  if(size>maxEntryBytes||size>maxBytes||!Number.isFinite(ttlMs)||ttlMs<=0)return;
+  remove(key);
+  records.set(key,{body,size,tags:new Set(tags),expiresAt:now()+ttlMs});
+  bytes+=size;evict();
+ };
+ const invalidate=tags=>{
+  const selected=new Set(tags.filter(Boolean));
+  // Epoch also rejects a response that began before an in-flight mutation.
+  epoch++;
+  if(!selected.size)return 0;
+  let removed=0;
+  for(const [key,entry] of records){
+   if([...selected].some(tag=>entry.tags.has(tag))){remove(key);removed++;}
+  }
+  return removed;
+ };
+ const clear=()=>{epoch++;records.clear();bytes=0;};
+ const cache=(scope,ttlMs,handler)=>async(req,res)=>{
+  // All protected routes must run userAuth and (where required) deviceScope
+  // BEFORE this function. Unknown principals never enter the cache.
+  if(!req.user?.uid||req.method!=='GET')return handler(req,res);
+  const query=queryString(req.query);
+  if(query.length>2048)return handler(req,res);
+  const key=JSON.stringify([req.user.uid,req.user.role,scope,req.path,query]);
+  const existing=hit(key);
+  res.set('Cache-Control','private, no-store');
+  if(existing){
+   res.set(cacheHeader,'HIT');
+   return res.type('json').send(existing.body);
+  }
+  res.set(cacheHeader,'MISS');
+  const openedAt=epoch;
+  const json=res.json.bind(res);
+  res.json=function(payload){
+   if(res.statusCode===200&&epoch===openedAt&&!res.headersSent){
+    try{
+     const body=JSON.stringify(payload);
+     const tags=['user:'+req.user.uid];
+     if(req.params?.deviceId)tags.push('device:'+req.params.deviceId);
+     if(payload&&typeof payload.deviceId==='string')tags.push('device:'+payload.deviceId);
+     for(const id of req.cacheDeviceIds??[])if(typeof id==='string')tags.push('device:'+id);
+     // An alert details response includes its buoy ID.
+     put(key,body,tags,ttlMs);
+    }catch{ /* Never fail a response because serialization/cache insertion fails. */ }
+   }
+   return json(payload);
+  };
+  return handler(req,res);
+ };
+ const invalidateAfter=(getTags,handler)=>async(req,res)=>{
+  const json=res.json.bind(res);
+  res.json=function(payload){
+   if(res.statusCode>=200&&res.statusCode<300&&!res.headersSent){
+    try{
+     const tags=typeof getTags==='function'?getTags(req,payload):getTags;
+     invalidate(Array.isArray(tags)?tags:[]);
+    }catch{
+     // Invalidating everything is safer than accidentally serving stale data.
+     clear();
+    }
+   }
+   return json(payload);
+  };
+  return handler(req,res);
+ };
+ return {cache,invalidate,invalidateAfter,clear,
+  stats:()=>({entries:records.size,bytes,epoch}),
+  // Test-only observability; not exposed as an HTTP endpoint.
+  peek:key=>hit(key)};
+}
+export const readCache=createReadCache();
+export const cached=(scope,ttlMs,handler)=>readCache.cache(scope,ttlMs,handler);
+export const invalidating=(getTags,handler)=>readCache.invalidateAfter(getTags,handler);
+export const invalidateCacheTags=(...tags)=>readCache.invalidate(tags);
