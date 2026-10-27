@@ -15,7 +15,7 @@ import {dispatch,offlineSweep} from './jobs.js';
 import {userAuth,deviceAuth,requireRole,deviceScope,deviceOwnerScope,deviceOperatorScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
 import {httpError} from './domain.js';
 import {firebase} from './firebase.js';
-import {accessibleDeviceIds,requireAccess} from './access.js';
+import {accessibleDeviceIds,accessLevel,requireAccess} from './access.js';
 import {cached,invalidating} from './read-cache.js';
 const app=express();app.disable('x-powered-by');app.set('trust proxy',1);
 // Capacitor 7's default Android WebView origin is https://localhost
@@ -46,8 +46,19 @@ const p='/api/v1';
 // exposing stale devices after a revocation or transfer.
 const sameIds=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&
  [...a].sort().every((id,index)=>id===[...b].sort()[index]);
-const validateMembership=async(req,_body,allowedIds)=>
- sameIds(await accessibleDeviceIds(firebase().db,req.user),allowedIds);
+const validateMembership=async(req,body,allowedIds)=>{
+ const db=firebase().db;
+ if(!sameIds(await accessibleDeviceIds(db,req.user),allowedIds))return false;
+ // A Viewer can become Owner without changing their authorized buoy IDs.
+ // Refresh access capabilities instead of serving an old cached role.
+ if(Array.isArray(body?.items)){
+  const items=body.items.filter(item=>typeof item?.access==='string');
+  const levels=await Promise.all(items.map(item=>accessLevel(db,req.user,item.id)));
+  if(items.some((item,i)=>item.access!==levels[i]))return false;
+ }
+ return true;
+};
+const validateDeviceAccess=(req,body)=>body?.access===req.deviceAccess;
 const validateAlertDetail=async(req,body)=>{
  if(typeof body?.deviceId!=='string')return false;
  await requireAccess(firebase().db,req.user,body.deviceId);
@@ -70,7 +81,7 @@ R('patch',p+'/auth/me',userAuth,distributedRateLimit('user_change',60),invalidat
 R('put',p+'/auth/avatar',userAuth,distributedRateLimit('avatar_upload',12),express.raw({type:['image/jpeg','image/png','image/webp'],limit:'2mb'}),invalidating(invalidateUser,avatar.putAvatar));
 R('delete',p+'/auth/avatar',userAuth,distributedRateLimit('avatar_delete',6),invalidating(invalidateUser,avatar.deleteAvatar));
 R('get',p+'/devices',userAuth,cached('devices',20000,h.listDevices,validateMembership));R('post',p+'/devices',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),invalidating(()=>['scope:devices','scope:alerts'],h.registerDevice));
-R('get',p+'/devices/:deviceId',userAuth,deviceScope,cached('device',20000,h.getDevice));R('patch',p+'/devices/:deviceId',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),invalidating(invalidateDevice,h.updateDevice));
+R('get',p+'/devices/:deviceId',userAuth,deviceScope,cached('device',20000,h.getDevice,validateDeviceAccess));R('patch',p+'/devices/:deviceId',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),invalidating(invalidateDevice,h.updateDevice));
 R('post',p+'/devices/:deviceId/rotate-key',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),invalidating(invalidateDevice,h.rotateKey));
 R('post',p+'/devices/:deviceId/claim-code',userAuth,requireRole('ADMIN'),distributedRateLimit('claim_admin',10),invalidating(invalidateDevice,h.reissueClaimCode));
 R('post',p+'/device/pairing-challenges',deviceAuth,distributedRateLimit('pair_start',6),h.startPairing);
