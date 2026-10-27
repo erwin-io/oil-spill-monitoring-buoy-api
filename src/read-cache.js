@@ -4,6 +4,10 @@ const DEFAULT_MAX_ENTRIES=400;
 const DEFAULT_MAX_BYTES=8*1024*1024;
 const DEFAULT_ENTRY_BYTES=256*1024;
 const cacheHeader='X-BlueGuard-Cache';
+const timing=(res,kind,started)=>{
+ const existing=res.get?.('Server-Timing');
+ res.set('Server-Timing',[existing,`cache;desc="${kind}";dur=${Date.now()-started}`].filter(Boolean).join(', '));
+};
 const queryString=query=>{
  const entries=Object.entries(query??{}).sort(([a],[b])=>a.localeCompare(b));
  return JSON.stringify(entries);
@@ -54,6 +58,7 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
  };
  const clear=()=>{epoch++;records.clear();bytes=0;};
  const cache=(scope,ttlMs,handler,validateHit)=>async(req,res)=>{
+  const started=Date.now();
   // All protected routes must run userAuth and (where required) deviceScope
   // BEFORE this function. Unknown principals never enter the cache.
   // Emulator integration tests directly create/update Firestore fixtures,
@@ -81,6 +86,7 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
    // do not serve an entry that the writer just invalidated.
    if(allowed&&hitEpoch===epoch&&records.get(key)===existing){
     res.set(cacheHeader,'HIT');
+    timing(res,'HIT',started);
     return res.type('json').send(existing.body);
    }
    if(records.get(key)===existing)remove(key);
@@ -101,6 +107,7 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
      put(key,body,tags,ttlMs,req.cacheDeviceIds);
     }catch{ /* Never fail a response because serialization/cache insertion fails. */ }
    }
+   timing(res,'MISS',started);
    return json(payload);
   };
   return handler(req,res);

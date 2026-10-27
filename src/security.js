@@ -1,18 +1,35 @@
 import {createHash} from 'node:crypto';
 import {Timestamp} from 'firebase-admin/firestore';
 import {firebase} from './firebase.js';
+import {authSingleFlight} from './auth-single-flight.js';
 import {keyHash,keysEqual,canRead,httpError} from './domain.js';
 import {requireAccess} from './access.js';
 export const asyncRoute=f=>(req,res,next)=>Promise.resolve().then(()=>f(req,res)).catch(next);
-export async function userAuth(req,res,next){try{
- const match=/^Bearer (\S+)$/i.exec(req.get('authorization')??'');if(!match)throw httpError('AUTH_REQUIRED',401);
- const {auth,db}=firebase();const identity=await auth.verifyIdToken(match[1],true);
- if(!identity.email_verified||!identity.email)throw httpError('EMAIL_NOT_VERIFIED',403);
- const doc=await db.collection('users').doc(identity.uid).get();
- if(!doc.exists)throw httpError('ACCOUNT_NOT_PROVISIONED',403);
- const profile=doc.data();if(profile.status!=='ACTIVE'||!['VIEWER','OPERATOR','ADMIN'].includes(profile.role))throw httpError('ACCOUNT_DISABLED',403);
- req.user={...profile,uid:identity.uid};next();
- }catch(e){next(e)}}
+export async function userAuth(req,res,next){
+ const started=Date.now();
+ try{
+  const match=/^Bearer (\S+)$/i.exec(req.get('authorization')??'');
+  if(!match)throw httpError('AUTH_REQUIRED',401);
+  const principal=await authSingleFlight.verify(match[1],async()=>{
+   const {auth,db}=firebase();
+   // Keep the existing Firebase revocation check on EVERY distinct completed
+   // request. Only truly overlapping requests share this same verification.
+   const identity=await auth.verifyIdToken(match[1],true);
+   if(!identity.email_verified||!identity.email)throw httpError('EMAIL_NOT_VERIFIED',403);
+   const doc=await db.collection('users').doc(identity.uid).get();
+   if(!doc.exists)throw httpError('ACCOUNT_NOT_PROVISIONED',403);
+   const profile=doc.data();
+   if(profile.status!=='ACTIVE'||!['VIEWER','OPERATOR','ADMIN'].includes(profile.role))
+    throw httpError('ACCOUNT_DISABLED',403);
+   return {...profile,uid:identity.uid};
+  });
+  // Shallow copy ensures endpoint-specific metadata never leaks across
+  // requests coalesced by a single in-flight check.
+  req.user={...principal};
+  res.set('Server-Timing','auth;dur='+(Date.now()-started));
+  next();
+ }catch(e){next(e)}
+}
 export async function deviceAuth(req,res,next){try{
  const deviceId=req.get('x-device-id');const key=req.get('x-device-key');if(!deviceId||!key||!/^[A-Za-z0-9_-]{1,80}$/.test(deviceId))throw httpError('DEVICE_AUTH_FAILED',401);
  const {db}=firebase();const [device,cred]=await Promise.all([db.collection('devices').doc(deviceId).get(),db.collection('deviceCredentials').doc(deviceId).get()]);
