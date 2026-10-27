@@ -53,7 +53,7 @@ const validateAlertDetail=async(req,body)=>{
  await requireAccess(firebase().db,req.user,body.deviceId);
  return true;
 };
-const userTag=req=>'user:'+req.user.uid;
+const userTag=req=>req.user?.uid?'user:'+req.user.uid:null;
 const deviceTag=req=>'device:'+(req.params?.deviceId??req.deviceId);
 const changedUsers=req=>(req.cacheAffectedUsers??[]).map(uid=>'user:'+uid);
 const invalidateUser=(req)=>[userTag(req),...changedUsers(req)];
@@ -90,8 +90,8 @@ R('get',p+'/devices/:deviceId/measurements',userAuth,deviceScope,cached('measure
 R('get',p+'/devices/:deviceId/health',userAuth,deviceScope,cached('health',15000,h.healthHistory));
 R('get',p+'/device/config',deviceAuth,h.deviceConfig);R('get',p+'/devices/:deviceId/config',userAuth,deviceScope,cached('config',20000,h.userConfig));
 R('put',p+'/devices/:deviceId/config',userAuth,deviceOperatorScope,distributedRateLimit('user_change',60),invalidating(invalidateDevice,h.putConfig));
-R('post',p+'/notifications/read-all',userAuth,distributedRateLimit('user_change',60),invalidating(invalidateUser,h.markAllAlertsRead));
-R('get',p+'/alerts',userAuth,cached('alerts',10000,h.alerts,validateMembership));R('get',p+'/alerts/:alertId',userAuth,cached('alert-detail',10000,h.alertDetail,validateAlertDetail));R('post',p+'/alerts/:alertId/read',userAuth,distributedRateLimit('user_change',60),invalidating(invalidateUser,h.markAlertRead));R('patch',p+'/alerts/:alertId/acknowledge',userAuth,distributedRateLimit('user_change',60),invalidating(req=>['user:'+req.user.uid,...changedUsers(req),...(req.cacheDeviceIds??[]).map(id=>'device:'+id)],h.acknowledge));
+R('post',p+'/notifications/read-all',userAuth,distributedRateLimit('user_change',60),invalidating(req=>['alerts-user:'+req.user.uid],h.markAllAlertsRead));
+R('get',p+'/alerts',userAuth,cached('alerts',10000,h.alerts,validateMembership));R('get',p+'/alerts/:alertId',userAuth,cached('alert-detail',10000,h.alertDetail,validateAlertDetail));R('post',p+'/alerts/:alertId/read',userAuth,distributedRateLimit('user_change',60),invalidating(req=>['alerts-user:'+req.user.uid],h.markAlertRead));R('patch',p+'/alerts/:alertId/acknowledge',userAuth,distributedRateLimit('user_change',60),invalidating(req=>['user:'+req.user.uid,...changedUsers(req),...(req.cacheDeviceIds??[]).map(id=>'device:'+id)],h.acknowledge));
 R('post',p+'/notifications/sessions',userAuth,distributedRateLimit('push_session',12),sessions.createPushSession);
 R('post',p+'/notifications/sessions/:sessionId/refresh',userAuth,distributedRateLimit('push_session',12),sessions.refreshPushSession);
 R('delete',p+'/notifications/sessions/:sessionId',userAuth,distributedRateLimit('push_session',12),sessions.revokePushSession);
