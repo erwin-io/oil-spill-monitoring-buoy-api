@@ -1,0 +1,57 @@
+name: One-time verified branch cleanup (api)
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-branch-cleanup.yml
+permissions:
+  contents: write
+jobs:
+  prune:
+    if: ${{ github.repository == 'erwin-io/oil-spill-monitoring-buoy-api' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify and delete audited obsolete refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
+          test "$actual" = "$GITHUB_SHA" || { echo "Main changed; abort."; exit 1; }
+          open_count="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq 'length')"
+          test "$open_count" = "0" || { echo "Open PR present; abort."; exit 1; }
+          while IFS='|' read -r branch expected; do
+            test -n "$branch" || continue
+            current="$(gh api "repos/$GITHUB_REPOSITORY/branches/$branch" --jq '.commit.sha + "|" + (.protected|tostring)')"
+            test "$current" = "$expected|false" || { echo "Branch moved or protected: $branch"; exit 1; }
+          done <<'EXPECTED_BRANCHES'
+          feat/p2-auth-email-resend-action-links|5052f2ab447d82e10a3925aad05465c18fddab57
+          feat/p2-gmail-smtp-email-delivery|462cf731c26398d04af7e2b7aef694e74062f638
+          feat/p2-owner-access-foundation|7ec4cc0b31ba4a4a6664c363488786a15f1c2ad1
+          feat/p2-safe-test-user-reset|789c28f3da82932dd5f9443bc17405e991a2e3bd
+          feat/p2-secure-claim-foundation|eef8ea9e673a1ead8227fd43b0f1f01c225d98b6
+          fix/p2-email-native-provider-contract|6f1b09bb1ac3258554035e7a2dc55828d5940fc1
+          fix/p2-native-firebase-email-actions|230a9d585e10884a1737d5cdbb0fc109bcbfbc0c
+          perf/cors-access-query-parallel-20261028|d91fa0f3cbc0e434e09bf4ac388333baf0d0fe44
+          perf/instance-read-cache-invalidation-20261027|aa8918fcd5c73438a42754bca6512bae0e2897b7
+          EXPECTED_BRANCHES
+          while IFS='|' read -r branch expected; do
+            test -n "$branch" || continue
+            current="$(gh api "repos/$GITHUB_REPOSITORY/branches/$branch" --jq '.commit.sha + "|" + (.protected|tostring)')"
+            test "$current" = "$expected|false" || { echo "Branch changed during prune: $branch"; exit 1; }
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch"
+            echo "Deleted: $branch"
+          done <<'EXPECTED_BRANCHES'
+          feat/p2-auth-email-resend-action-links|5052f2ab447d82e10a3925aad05465c18fddab57
+          feat/p2-gmail-smtp-email-delivery|462cf731c26398d04af7e2b7aef694e74062f638
+          feat/p2-owner-access-foundation|7ec4cc0b31ba4a4a6664c363488786a15f1c2ad1
+          feat/p2-safe-test-user-reset|789c28f3da82932dd5f9443bc17405e991a2e3bd
+          feat/p2-secure-claim-foundation|eef8ea9e673a1ead8227fd43b0f1f01c225d98b6
+          fix/p2-email-native-provider-contract|6f1b09bb1ac3258554035e7a2dc55828d5940fc1
+          fix/p2-native-firebase-email-actions|230a9d585e10884a1737d5cdbb0fc109bcbfbc0c
+          perf/cors-access-query-parallel-20261028|d91fa0f3cbc0e434e09bf4ac388333baf0d0fe44
+          perf/instance-read-cache-invalidation-20261027|aa8918fcd5c73438a42754bca6512bae0e2897b7
+          EXPECTED_BRANCHES
