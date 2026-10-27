@@ -56,7 +56,13 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
  const cache=(scope,ttlMs,handler,validateHit)=>async(req,res)=>{
   // All protected routes must run userAuth and (where required) deviceScope
   // BEFORE this function. Unknown principals never enter the cache.
-  if(!req.user?.uid||req.method!=='GET')return handler(req,res);
+  // Emulator integration tests directly create/update Firestore fixtures,
+  // bypassing the API's mutation hooks. Keep those tests uncached by default.
+  // Production instances cache unless explicitly disabled by configuration.
+  const emulator=Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+  if(process.env.BLUEGUARD_NODE_CACHE_ENABLED==='false'||
+     (emulator&&process.env.BLUEGUARD_NODE_CACHE_ENABLED!=='true')||
+     !req.user?.uid||req.method!=='GET')return handler(req,res);
   const query=queryString(req.query);
   if(query.length>2048)return handler(req,res);
   const key=JSON.stringify([req.user.uid,req.user.role,scope,req.path,query]);
