@@ -129,3 +129,21 @@ test('Pusher refresh header forces a current read and replaces a previously warm
  assert.equal(now.headers['X-BlueGuard-Cache'],'HIT');
  assert.equal(now.body.value,2);
 });
+
+test('invalidated cache hit is not served after asynchronous ACL check races a write',async()=>{
+ const c=createReadCache();let value=1,reads=0,release;
+ let delayValidation=false;
+ const gate=new Promise(resolve=>{release=resolve});
+ const handler=c.cache('devices',20000,echo(async()=>({value:value,reads:++reads})),async()=>{
+  if(delayValidation)await gate;
+  return true;
+ });
+ await handler(request(),response());
+ value=2;delayValidation=true;
+ const out=response(),pending=handler(request(),out);
+ c.invalidate(['user:alice']);release();
+ await pending;
+ assert.equal(out.headers['X-BlueGuard-Cache'],'MISS');
+ assert.equal(out.body.value,2);
+ assert.equal(reads,2);
+});
