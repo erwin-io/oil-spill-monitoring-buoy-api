@@ -25,9 +25,13 @@ export async function requireAccess(db,user,id,kind='READ',tx=null){
 
 export async function accessibleDeviceAccess(db,user){
  const ids=new Set();
- const owned=await db.collection('devices').where('ownerUid','==',user.uid).get();
+ // These two independent identity-scoped Firestore reads were sequential.
+ // Read them concurrently while still verifying each candidate below.
+ const [owned,shared]=await Promise.all([
+  db.collection('devices').where('ownerUid','==',user.uid).get(),
+  db.collection('users').doc(user.uid).collection('sharedDevices').get()
+ ]);
  for(const doc of owned.docs)ids.add(doc.id);
- const shared=await db.collection('users').doc(user.uid).collection('sharedDevices').get();
  for(const doc of shared.docs)ids.add(doc.id);
  if(process.env.P2_STRICT_OWNERSHIP!=='true'){
   if(user.role==='ADMIN'){
