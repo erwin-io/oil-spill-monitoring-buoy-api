@@ -15,7 +15,7 @@ import {dispatch,offlineSweep} from './jobs.js';
 import {userAuth,deviceAuth,requireRole,deviceScope,deviceOwnerScope,deviceOperatorScope,asyncRoute,errorHandler,distributedRateLimit} from './security.js';
 import {httpError} from './domain.js';
 import {firebase} from './firebase.js';
-import {accessibleDeviceIds,accessLevel,requireAccess} from './access.js';
+import {accessibleDeviceIds,accessibleDeviceAccess,requireAccess} from './access.js';
 import {cached,invalidating} from './read-cache.js';
 const app=express();app.disable('x-powered-by');app.set('trust proxy',1);
 // Capacitor 7's default Android WebView origin is https://localhost
@@ -48,13 +48,13 @@ const sameIds=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&
  [...a].sort().every((id,index)=>id===[...b].sort()[index]);
 const validateMembership=async(req,body,allowedIds)=>{
  const db=firebase().db;
- if(!sameIds(await accessibleDeviceIds(db,req.user),allowedIds))return false;
+ const current=await accessibleDeviceAccess(db,req.user);
+ if(!sameIds(current.map(item=>item.id),allowedIds))return false;
  // A Viewer can become Owner without changing their authorized buoy IDs.
- // Refresh access capabilities instead of serving an old cached role.
+ // Access levels are retrieved in the SAME pass as membership checks.
  if(Array.isArray(body?.items)){
-  const items=body.items.filter(item=>typeof item?.access==='string');
-  const levels=await Promise.all(items.map(item=>accessLevel(db,req.user,item.id)));
-  if(items.some((item,i)=>item.access!==levels[i]))return false;
+  const byId=new Map(current.map(item=>[item.id,item.access]));
+  if(body.items.some(item=>typeof item?.access==='string'&&item.access!==byId.get(item.id)))return false;
  }
  return true;
 };
