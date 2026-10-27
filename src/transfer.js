@@ -81,9 +81,7 @@ export async function acceptTransfer(req,res){
   tx.update(transfer,{state:'ACCEPTED',acceptedAt:now()});
   tx.delete(pairing);
   tx.create(audit,{type:'TRANSFER_ACCEPTED',requestId,actorUid:req.user.uid,previousOwnerUid:t.data().fromUid,at:now()});
-  queueRefresh(tx,db,{deviceId:id,resource:'ownership'});
-  queueRefresh(tx,db,{uid:req.user.uid,resource:'ownership'});
-  queueRefresh(tx,db,{uid:previousOwnerUid,resource:'ownership'});
+  queueRefresh(tx,db,{deviceId:id,uids:[req.user.uid,previousOwnerUid],resource:'ownership'});
  });}catch(error){
   // Concurrent accept attempts may exhaust emulator/Firestore transaction
   // retries. Treat ABORTED as a conflict, never as a successful transfer.
