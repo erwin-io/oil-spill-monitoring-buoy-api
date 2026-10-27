@@ -3,7 +3,7 @@ import {firebase} from './firebase.js';
 import {CONFIG_DEFAULT,makeKey,keyHash,canRead,canOperate,httpError,parseTime,latestWins,alertKey,configNext,tokenId,healthAlerts} from './domain.js';
 import {validate,measurement,health,newDevice,editDevice,editConfig,pushToken,deviceId,profileEdit} from './schemas.js';
 import {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus} from './pairing.js';
-import {accessibleDeviceIds,accessLevel,requireAccess} from './access.js';
+import {accessibleDeviceIds,accessibleDeviceAccess,accessLevel,requireAccess} from './access.js';
 import {requirePushSession,isEligiblePushSession} from './push-sessions.js';
 import {inviteViewer,myInvitations,acceptInvitation,revokeViewer} from './sharing.js';
 import {queueRefresh} from './realtime-refresh.js';
@@ -56,7 +56,9 @@ export async function updateOwnProfile(req,res){
 }
 export async function listDevices(req,res){
  const db=firebase().db,limit=maxPage(req.query.limit,100);
- const ids=(await accessibleDeviceIds(db,req.user)).sort();
+ const membership=await accessibleDeviceAccess(db,req.user);
+ const ids=membership.map(({id})=>id).sort();
+ const accessById=new Map(membership.map(({id,access})=>[id,access]));
  req.cacheDeviceIds=ids;
  const after=req.query.cursor;
  if(after!==undefined&&(typeof after!=='string'||!ids.includes(after)))
@@ -65,7 +67,9 @@ export async function listDevices(req,res){
  const pageIds=ids.slice(start,start+limit),remaining=ids.length>start+pageIds.length;
  const docs=await Promise.all(pageIds.map(id=>db.collection('devices').doc(id).get()));
  const visible=docs.filter(d=>d.exists);
- res.json({items:await Promise.all(visible.map(async d=>({...safeDevice(clean(d)),access:await accessLevel(db,req.user,d.id)}))),
+ // Reuse the freshly verified access levels, rather than doing another
+ // device/viewer Firestore lookup for every returned list item.
+ res.json({items:visible.map(d=>({...safeDevice(clean(d)),access:accessById.get(d.id)})),
   nextCursor:remaining?pageIds.at(-1):null});
 }
 export async function getDevice(req,res){const db=firebase().db,doc=await db.collection('devices').doc(req.params.deviceId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);res.json({...safeDevice(clean(doc)),access:await accessLevel(db,req.user,doc.id)})}
