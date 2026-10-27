@@ -38,7 +38,7 @@ export async function bootstrap(req,res){
  const p=(await ref.get()).data(),accessible=await accessibleDeviceIds(db,{...p,uid:id.uid});
  res.json({uid:id.uid,email:p.email,displayName:p.displayName,role:p.role,status:p.status,avatarUrl:p.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible});
 }
-export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);res.json({uid,role,status,email,displayName,avatarUrl:req.user.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
+export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);req.cacheDeviceIds=accessible;res.json({uid,role,status,email,displayName,avatarUrl:req.user.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
 export async function updateOwnProfile(req,res){
  const {displayName}=validate(profileEdit,req.body);
  const db=firebase().db,ref=db.collection('users').doc(req.user.uid);
@@ -55,6 +55,7 @@ export async function updateOwnProfile(req,res){
 export async function listDevices(req,res){
  const db=firebase().db,limit=maxPage(req.query.limit,100);
  const ids=(await accessibleDeviceIds(db,req.user)).sort();
+ req.cacheDeviceIds=ids;
  const after=req.query.cursor;
  if(after!==undefined&&(typeof after!=='string'||!ids.includes(after)))
   throw httpError('INVALID_CURSOR',400);
@@ -196,6 +197,7 @@ export async function putConfig(req,res){const input=validate(editConfig,req.bod
 export async function alerts(req,res){
  const db=firebase().db;
  const allowed=await accessibleDeviceIds(db,req.user),allowedSet=new Set(allowed);
+ req.cacheDeviceIds=allowed;
  if(allowed?.length===0)return res.json({items:[],nextCursor:null,openCount:0,unreadCount:0});
  const status=req.query.status;
  if(status!==undefined&&!['OPEN','ACKNOWLEDGED','RESOLVED'].includes(status))throw httpError('INVALID_ALERT_STATUS',422);
@@ -294,7 +296,7 @@ export async function markAllAlertsRead(req,res){
 }
 export async function alertDetail(req,res){const db=firebase().db,doc=await db.collection('alerts').doc(req.params.alertId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);await requireAccess(db,req.user,doc.data().deviceId);res.json(clean(doc))}
 export async function acknowledge(req,res){const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId);let alert;
- await db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists)throw httpError('NOT_FOUND',404);alert=snap.data();await requireAccess(db,req.user,alert.deviceId,'OPERATE',tx);if(alert.status==='RESOLVED')throw httpError('ALERT_ALREADY_RESOLVED',409);if(alert.status!=='ACKNOWLEDGED'){tx.update(ref,{status:'ACKNOWLEDGED',acknowledgedAt:now(),acknowledgedBy:req.user.uid});enqueue(tx,db,'alert.acknowledged',alert.deviceId,ref.id,{alertId:ref.id,deviceId:alert.deviceId,uid:req.user.uid})}});res.json({alertId:ref.id,status:'ACKNOWLEDGED'})}
+ await db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists)throw httpError('NOT_FOUND',404);alert=snap.data();await requireAccess(db,req.user,alert.deviceId,'OPERATE',tx);if(alert.status==='RESOLVED')throw httpError('ALERT_ALREADY_RESOLVED',409);if(alert.status!=='ACKNOWLEDGED'){tx.update(ref,{status:'ACKNOWLEDGED',acknowledgedAt:now(),acknowledgedBy:req.user.uid});enqueue(tx,db,'alert.acknowledged',alert.deviceId,ref.id,{alertId:ref.id,deviceId:alert.deviceId,uid:req.user.uid})}});req.cacheDeviceIds=[alert.deviceId];res.json({alertId:ref.id,status:'ACKNOWLEDGED'})}
 export async function registerPush(req,res){
  const {sessionId,sessionSecret,...p}=validate(pushToken,req.body);
  const db=firebase().db,id=tokenId(p.token),ref=db.collection('notificationTokens').doc(id);
