@@ -110,3 +110,22 @@ test('non-2xx writes never invalidate successful cached reads',async()=>{
  await get(request(),response());
  assert.equal(count,1);
 });
+
+test('Pusher refresh header forces a current read and replaces a previously warm response',async()=>{
+ const c=createReadCache();let backing=1,reads=0;
+ const handler=c.cache('alerts',10000,echo(async()=>({value:backing,reads:++reads})));
+ const req=request('alice','/api/v1/alerts');
+ await handler(req,response());
+ backing=2; // external write on another Vercel instance, no local invalidate
+ const stale=response();await handler(req,stale);
+ assert.equal(stale.headers['X-BlueGuard-Cache'],'HIT');
+ assert.equal(stale.body.value,1);
+ const freshReq={...req,get:name=>name==='x-blueguard-cache-refresh'?'true':undefined};
+ const fresh=response();await handler(freshReq,fresh);
+ assert.equal(fresh.headers['X-BlueGuard-Cache'],'MISS');
+ assert.equal(fresh.body.value,2);
+ assert.equal(reads,2);
+ const now=response();await handler(req,now);
+ assert.equal(now.headers['X-BlueGuard-Cache'],'HIT');
+ assert.equal(now.body.value,2);
+});
