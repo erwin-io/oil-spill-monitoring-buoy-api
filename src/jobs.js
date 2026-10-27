@@ -82,6 +82,14 @@ async function sendRealtime(job){if(process.env.PUSHER_ENABLED!=='true')return;
   // Device changes use the existing signed private-device channel.
   const toUser=job.type==='alert.acknowledged'||
     (job.type==='data.changed'&&typeof job.payload?.uid==='string');
+  // One outbox entry fans out to involved ownership identities and the buoy.
+  if(job.type==='data.changed'&&Array.isArray(job.notifyUsers)&&job.notifyUsers.length){
+   const channels=new Set(job.notifyUsers.filter(uid=>typeof uid==='string'&&uid)
+    .map(uid=>`private-user-${uid}`));
+   if(job.deviceId)channels.add(`private-device-${job.deviceId}`);
+   for(const channel of channels)await p.trigger(channel,job.type,job.payload);
+   return;
+  }
   const channel=toUser?`private-user-${job.payload.uid}`:`private-device-${job.deviceId}`;
  await p.trigger(channel,job.type,job.payload);
 }
