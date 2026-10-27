@@ -33,12 +33,12 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
   records.delete(key);records.set(key,entry); // LRU
   return entry;
  };
- const put=(key,body,tags,ttlMs)=>{
+ const put=(key,body,tags,ttlMs,deviceIds=[])=>{
   if(typeof body!=='string')return;
   const size=Buffer.byteLength(body,'utf8');
   if(size>maxEntryBytes||size>maxBytes||!Number.isFinite(ttlMs)||ttlMs<=0)return;
   remove(key);
-  records.set(key,{body,size,tags:new Set(tags),expiresAt:now()+ttlMs});
+  records.set(key,{body,size,tags:new Set(tags),deviceIds:[...deviceIds],expiresAt:now()+ttlMs});
   bytes+=size;evict();
  };
  const invalidate=tags=>{
@@ -65,7 +65,7 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
   if(existing){
    // Never bypass a current device-ownership/share check on a warm hit.
    // Expensive alert/count queries are skipped, while the ACL is current.
-   const allowed=!validateHit||await validateHit(req,JSON.parse(existing.body));
+   const allowed=!validateHit||await validateHit(req,JSON.parse(existing.body),existing.deviceIds);
    if(allowed){
     res.set(cacheHeader,'HIT');
     return res.type('json').send(existing.body);
@@ -79,12 +79,12 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
    if(res.statusCode===200&&epoch===openedAt&&!res.headersSent){
     try{
      const body=JSON.stringify(payload);
-     const tags=['user:'+req.user.uid];
+     const tags=['user:'+req.user.uid,'scope:'+scope];
      if(req.params?.deviceId)tags.push('device:'+req.params.deviceId);
      if(payload&&typeof payload.deviceId==='string')tags.push('device:'+payload.deviceId);
      for(const id of req.cacheDeviceIds??[])if(typeof id==='string')tags.push('device:'+id);
      // An alert details response includes its buoy ID.
-     put(key,body,tags,ttlMs);
+     put(key,body,tags,ttlMs,req.cacheDeviceIds);
     }catch{ /* Never fail a response because serialization/cache insertion fails. */ }
    }
    return json(payload);
