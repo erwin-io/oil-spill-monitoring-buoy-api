@@ -53,7 +53,7 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
   return removed;
  };
  const clear=()=>{epoch++;records.clear();bytes=0;};
- const cache=(scope,ttlMs,handler)=>async(req,res)=>{
+ const cache=(scope,ttlMs,handler,validateHit)=>async(req,res)=>{
   // All protected routes must run userAuth and (where required) deviceScope
   // BEFORE this function. Unknown principals never enter the cache.
   if(!req.user?.uid||req.method!=='GET')return handler(req,res);
@@ -63,8 +63,14 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
   const existing=hit(key);
   res.set('Cache-Control','private, no-store');
   if(existing){
-   res.set(cacheHeader,'HIT');
-   return res.type('json').send(existing.body);
+   // Never bypass a current device-ownership/share check on a warm hit.
+   // Expensive alert/count queries are skipped, while the ACL is current.
+   const allowed=!validateHit||await validateHit(req,JSON.parse(existing.body));
+   if(allowed){
+    res.set(cacheHeader,'HIT');
+    return res.type('json').send(existing.body);
+   }
+   remove(key);
   }
   res.set(cacheHeader,'MISS');
   const openedAt=epoch;
@@ -107,6 +113,6 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
   peek:key=>hit(key)};
 }
 export const readCache=createReadCache();
-export const cached=(scope,ttlMs,handler)=>readCache.cache(scope,ttlMs,handler);
+export const cached=(scope,ttlMs,handler,validateHit)=>readCache.cache(scope,ttlMs,handler,validateHit);
 export const invalidating=(getTags,handler)=>readCache.invalidateAfter(getTags,handler);
 export const invalidateCacheTags=(...tags)=>readCache.invalidate(tags);
