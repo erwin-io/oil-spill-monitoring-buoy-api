@@ -78,7 +78,11 @@ export async function pushAlert(db,messaging,job,ref){
 }
 async function sendRealtime(job){if(process.env.PUSHER_ENABLED!=='true')return;
  const {default:Pusher}=await import('pusher');const p=new Pusher({appId:process.env.PUSHER_APP_ID,key:process.env.PUSHER_KEY,secret:process.env.PUSHER_SECRET,cluster:process.env.PUSHER_CLUSTER});
- const channel=job.type==='alert.acknowledged'?`private-user-${job.payload.uid}`:`private-device-${job.deviceId}`;
+ // Personal reads/invitations go only to that user's private channel.
+  // Device changes use the existing signed private-device channel.
+  const toUser=job.type==='alert.acknowledged'||
+    (job.type==='data.changed'&&typeof job.payload?.uid==='string');
+  const channel=toUser?`private-user-${job.payload.uid}`:`private-device-${job.deviceId}`;
  await p.trigger(channel,job.type,job.payload);
 }
 async function dispatchOne(db,messaging,ref){let job;const lease=new Date(Date.now()+90000).toISOString();
