@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {firebase} from './firebase.js';
+import {queueRefresh} from './realtime-refresh.js';
 import {httpError} from './domain.js';
 import {validate,deviceId,inviteViewer} from './schemas.js';
 const expiresMs=24*60*60*1000;
@@ -35,20 +36,26 @@ export async function startTransfer(req,res){
   tx.set(transfer,{deviceId:id,fromUid:req.user.uid,toUid:target.uid,state:'PENDING',requestId:idempotency,
    requestedAt:now(),expiresAt});
   tx.create(audit,{type:'TRANSFER_REQUESTED',requestId:idempotency,actorUid:req.user.uid,recipientUid:target.uid,at:now()});
+  queueRefresh(tx,db,{uid:target.uid,resource:'transfers'});
  });
+ req.cacheAffectedUsers=[target.uid];
  res.status(201).json({deviceId:id,requestId:idempotency,state:'PENDING',expiresAt});
 }
 export async function cancelTransfer(req,res){
  const id=validate(deviceId,req.params.deviceId),db=firebase().db;
+ let recipientUid;
  const {device,transfer,audit}=references(db,id);
  await db.runTransaction(async tx=>{
   const [d,t]=await Promise.all([tx.get(device),tx.get(transfer)]);
   if(!d.exists||d.data().ownerUid!==req.user.uid)throw httpError('FORBIDDEN',403);
   if(!t.exists||t.data().state!=='PENDING'||t.data().fromUid!==req.user.uid)
    throw httpError('TRANSFER_NOT_PENDING',409);
+  recipientUid=t.data().toUid;
   tx.update(transfer,{state:'CANCELLED',cancelledAt:now()});
   tx.create(audit,{type:'TRANSFER_CANCELLED',requestId:t.data().requestId,actorUid:req.user.uid,at:now()});
+  queueRefresh(tx,db,{uid:recipientUid,resource:'transfers'});
  });
+ req.cacheAffectedUsers=[recipientUid];
  res.json({deviceId:id,state:'CANCELLED'});
 }
 export async function acceptTransfer(req,res){
@@ -60,10 +67,12 @@ export async function acceptTransfer(req,res){
  const profile=await db.collection('users').doc(req.user.uid).get();
  if(!profile.exists||profile.data().status!=='ACTIVE')throw httpError('RECIPIENT_NOT_ACTIVE',403);
  const {device,transfer,audit,pairing}=references(db,id);
+ let previousOwnerUid;
  try{await db.runTransaction(async tx=>{
   const [d,t]=await Promise.all([tx.get(device),tx.get(transfer)]);
   if(!d.exists||!d.data().ownerUid)throw httpError('NOT_FOUND',404);
   assertPending(t,d.data().ownerUid,req.user.uid);
+  previousOwnerUid=d.data().ownerUid;
   if(t.data().requestId!==requestId)throw httpError('TRANSFER_NOT_PENDING',409);
   // Device ownership and consumed transfer are changed in the SAME transaction.
   // Old accepted Viewers are rejected by accessLevel because invitedBy no longer
@@ -72,6 +81,9 @@ export async function acceptTransfer(req,res){
   tx.update(transfer,{state:'ACCEPTED',acceptedAt:now()});
   tx.delete(pairing);
   tx.create(audit,{type:'TRANSFER_ACCEPTED',requestId,actorUid:req.user.uid,previousOwnerUid:t.data().fromUid,at:now()});
+  queueRefresh(tx,db,{deviceId:id,resource:'ownership'});
+  queueRefresh(tx,db,{uid:req.user.uid,resource:'ownership'});
+  queueRefresh(tx,db,{uid:previousOwnerUid,resource:'ownership'});
  });}catch(error){
   // Concurrent accept attempts may exhaust emulator/Firestore transaction
   // retries. Treat ABORTED as a conflict, never as a successful transfer.
@@ -79,6 +91,7 @@ export async function acceptTransfer(req,res){
    throw httpError('TRANSFER_CONFLICT',409);
   throw error;
  }
+ req.cacheAffectedUsers=[previousOwnerUid,req.user.uid];
  res.json({deviceId:id,state:'ACCEPTED',access:'OWNER'});
 }
 export async function incomingTransfers(req,res){
