@@ -71,16 +71,19 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
   const forceRefresh=req.get?.('x-blueguard-cache-refresh')==='true';
   if(forceRefresh)remove(key);
   const existing=forceRefresh?null:hit(key);
+  const hitEpoch=epoch;
   res.set('Cache-Control','private, no-store');
   if(existing){
    // Never bypass a current device-ownership/share check on a warm hit.
    // Expensive alert/count queries are skipped, while the ACL is current.
    const allowed=!validateHit||await validateHit(req,JSON.parse(existing.body),existing.deviceIds);
-   if(allowed){
+   // If a mutation completed while ACL revalidation awaited Firestore,
+   // do not serve an entry that the writer just invalidated.
+   if(allowed&&hitEpoch===epoch&&records.get(key)===existing){
     res.set(cacheHeader,'HIT');
     return res.type('json').send(existing.body);
    }
-   remove(key);
+   if(records.get(key)===existing)remove(key);
   }
   res.set(cacheHeader,'MISS');
   const openedAt=epoch;
