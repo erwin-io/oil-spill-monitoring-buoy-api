@@ -80,6 +80,7 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
     try{
      const body=JSON.stringify(payload);
      const tags=['user:'+req.user.uid,'scope:'+scope];
+     if(scope==='alerts'||scope==='alert-detail')tags.push('alerts-user:'+req.user.uid);
      if(req.params?.deviceId)tags.push('device:'+req.params.deviceId);
      if(payload&&typeof payload.deviceId==='string')tags.push('device:'+payload.deviceId);
      for(const id of req.cacheDeviceIds??[])if(typeof id==='string')tags.push('device:'+id);
