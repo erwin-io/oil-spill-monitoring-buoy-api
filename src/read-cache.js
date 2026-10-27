@@ -66,7 +66,11 @@ export function createReadCache({now=Date.now,maxEntries=DEFAULT_MAX_ENTRIES,
   const query=queryString(req.query);
   if(query.length>2048)return handler(req,res);
   const key=JSON.stringify([req.user.uid,req.user.role,scope,req.path,query]);
-  const existing=hit(key);
+  // A real Pusher change or explicit user pull-to-refresh must obtain fresh
+  // Firestore data even if Vercel routed it to a different warm instance.
+  const forceRefresh=req.get?.('x-blueguard-cache-refresh')==='true';
+  if(forceRefresh)remove(key);
+  const existing=forceRefresh?null:hit(key);
   res.set('Cache-Control','private, no-store');
   if(existing){
    // Never bypass a current device-ownership/share check on a warm hit.
