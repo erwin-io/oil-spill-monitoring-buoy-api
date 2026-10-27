@@ -6,6 +6,7 @@ import {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus}
 import {accessibleDeviceIds,accessLevel,requireAccess} from './access.js';
 import {requirePushSession,isEligiblePushSession} from './push-sessions.js';
 import {inviteViewer,myInvitations,acceptInvitation,revokeViewer} from './sharing.js';
+import {queueRefresh} from './realtime-refresh.js';
 const now=()=>new Date().toISOString();
 const stable=x=>Array.isArray(x)?'['+x.map(stable).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+stable(x[k])).join(',')+'}':JSON.stringify(x);
 const digest=x=>createHash('sha256').update(stable(x)).digest('hex');
@@ -38,7 +39,7 @@ export async function bootstrap(req,res){
  const p=(await ref.get()).data(),accessible=await accessibleDeviceIds(db,{...p,uid:id.uid});
  res.json({uid:id.uid,email:p.email,displayName:p.displayName,role:p.role,status:p.status,avatarUrl:p.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible});
 }
-export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);res.json({uid,role,status,email,displayName,avatarUrl:req.user.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
+export async function me(req,res){const {uid,role,status,email,displayName}=req.user,accessible=await accessibleDeviceIds(firebase().db,req.user);req.cacheDeviceIds=accessible;res.json({uid,role,status,email,displayName,avatarUrl:req.user.avatarUrl??null,allowedDeviceIds:accessible,accessibleDeviceIds:accessible})}
 export async function updateOwnProfile(req,res){
  const {displayName}=validate(profileEdit,req.body);
  const db=firebase().db,ref=db.collection('users').doc(req.user.uid);
@@ -46,6 +47,7 @@ export async function updateOwnProfile(req,res){
   const profile=await tx.get(ref);
   if(!profile.exists||profile.data().status!=='ACTIVE')throw httpError('ACCOUNT_DISABLED',403);
   tx.update(ref,{displayName,profileUpdatedAt:now()});
+  queueRefresh(tx,db,{uid:req.user.uid,resource:'profile'});
  });
  const profile=await ref.get();
  const allowedDeviceIds=await accessibleDeviceIds(db,{...profile.data(),uid:req.user.uid});
@@ -55,6 +57,7 @@ export async function updateOwnProfile(req,res){
 export async function listDevices(req,res){
  const db=firebase().db,limit=maxPage(req.query.limit,100);
  const ids=(await accessibleDeviceIds(db,req.user)).sort();
+ req.cacheDeviceIds=ids;
  const after=req.query.cursor;
  if(after!==undefined&&(typeof after!=='string'||!ids.includes(after)))
   throw httpError('INVALID_CURSOR',400);
@@ -72,6 +75,7 @@ export async function registerDevice(req,res){const input=validate(newDevice,req
  tx.create(ref,{...input,status:'ACTIVE',registeredAt:now(),lastSeenAt:null,lastMeasurementAt:null,latestClassification:null,confidence:null});
  tx.create(cref,{keyHash:hash,claimCodeHash:keyHash('claim:v1:'+claimCode,pepper),claimCodeVersion:1,enabled:true,rotatedAt:now()});
  tx.create(ref.collection('config').doc('current'),{...CONFIG_DEFAULT,configVersion:1,updatedAt:now()});
+ queueRefresh(tx,db,{deviceId:id,resource:'device'});
  });res.status(201).json({deviceId:id,deviceKey:secret,claimCode,warning:'Store the upload key outside the QR; place only the device ID and claim code inside the protected internal QR. Neither secret is shown again.'});
 }
 export {reissueClaimCode,startPairing,requestClaim,confirmPairing,pairingStatus};
@@ -86,6 +90,7 @@ export async function updateDevice(req,res){
   if(p.status&&!cred.exists)throw httpError('DEVICE_CREDENTIALS_MISSING',409);
   tx.update(ref,{...p,updatedAt:now()});
   if(p.status)tx.update(credential,{enabled:p.status==='ACTIVE'});
+  queueRefresh(tx,db,{deviceId:id,resource:'device'});
  });
  res.json({deviceId:id,...p});
 }
@@ -189,13 +194,14 @@ export async function healthHistory(req,res){res.json(await listPage(firebase().
 export async function deviceConfig(req,res){const doc=await firebase().db.collection('devices').doc(req.deviceId).collection('config').doc('current').get();if(!doc.exists)throw httpError('NOT_FOUND',404);res.json(doc.data())}
 export async function userConfig(req,res){const doc=await firebase().db.collection('devices').doc(req.params.deviceId).collection('config').doc('current').get();if(!doc.exists)throw httpError('NOT_FOUND',404);res.json(doc.data())}
 export async function putConfig(req,res){const input=validate(editConfig,req.body);const {configVersion,...changes}=input;const ref=firebase().db.collection('devices').doc(req.params.deviceId).collection('config').doc('current');let next;
- await firebase().db.runTransaction(async tx=>{const doc=await tx.get(ref);if(!doc.exists)throw httpError('NOT_FOUND',404);next={...configNext(doc.data(),configVersion,changes),updatedAt:now()};tx.set(ref,next)});res.json(next);
+ await firebase().db.runTransaction(async tx=>{const doc=await tx.get(ref);if(!doc.exists)throw httpError('NOT_FOUND',404);next={...configNext(doc.data(),configVersion,changes),updatedAt:now()};tx.set(ref,next);queueRefresh(tx,firebase().db,{deviceId:req.params.deviceId,resource:'config'})});res.json(next);
 }
 // Alert paging uses snapshot cursors (the last visible document ID), so ties
 // on createdAt remain stable across pages without offset-based duplicates.
 export async function alerts(req,res){
  const db=firebase().db;
  const allowed=await accessibleDeviceIds(db,req.user),allowedSet=new Set(allowed);
+ req.cacheDeviceIds=allowed;
  if(allowed?.length===0)return res.json({items:[],nextCursor:null,openCount:0,unreadCount:0});
  const status=req.query.status;
  if(status!==undefined&&!['OPEN','ACKNOWLEDGED','RESOLVED'].includes(status))throw httpError('INVALID_ALERT_STATUS',422);
@@ -276,8 +282,11 @@ export async function markAlertRead(req,res){
  const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId),alert=await ref.get();
  if(!alert.exists)throw httpError('NOT_FOUND',404);
  await requireAccess(db,req.user,alert.data().deviceId);
- await db.collection('users').doc(req.user.uid).collection('readAlerts').doc(alert.id)
-  .set({alertId:alert.id,deviceId:alert.data().deviceId,episode:alert.data().episode??0,readAt:now()},{merge:true});
+ const batch=db.batch();
+ batch.set(db.collection('users').doc(req.user.uid).collection('readAlerts').doc(alert.id),
+  {alertId:alert.id,deviceId:alert.data().deviceId,episode:alert.data().episode??0,readAt:now()},{merge:true});
+ queueRefresh(batch,db,{uid:req.user.uid,resource:'alerts'});
+ await batch.commit();
  res.json({alertId:alert.id,unread:false});
 }
 export async function markAllAlertsRead(req,res){
@@ -288,13 +297,15 @@ export async function markAllAlertsRead(req,res){
  for(let i=0;i<ids.length;i+=400){
   const batch=db.batch();
   for(const id of ids.slice(i,i+400))batch.set(collection.doc(id),{readAt,deviceId:id});
+  // The same commit updates the read-through watermark and its refresh signal.
+  if(i+400>=ids.length)queueRefresh(batch,db,{uid:req.user.uid,resource:'alerts'});
   await batch.commit();
  }
  res.json({readAt,deviceCount:ids.length});
 }
 export async function alertDetail(req,res){const db=firebase().db,doc=await db.collection('alerts').doc(req.params.alertId).get();if(!doc.exists)throw httpError('NOT_FOUND',404);await requireAccess(db,req.user,doc.data().deviceId);res.json(clean(doc))}
 export async function acknowledge(req,res){const db=firebase().db,ref=db.collection('alerts').doc(req.params.alertId);let alert;
- await db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists)throw httpError('NOT_FOUND',404);alert=snap.data();await requireAccess(db,req.user,alert.deviceId,'OPERATE',tx);if(alert.status==='RESOLVED')throw httpError('ALERT_ALREADY_RESOLVED',409);if(alert.status!=='ACKNOWLEDGED'){tx.update(ref,{status:'ACKNOWLEDGED',acknowledgedAt:now(),acknowledgedBy:req.user.uid});enqueue(tx,db,'alert.acknowledged',alert.deviceId,ref.id,{alertId:ref.id,deviceId:alert.deviceId,uid:req.user.uid})}});res.json({alertId:ref.id,status:'ACKNOWLEDGED'})}
+ await db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists)throw httpError('NOT_FOUND',404);alert=snap.data();await requireAccess(db,req.user,alert.deviceId,'OPERATE',tx);if(alert.status==='RESOLVED')throw httpError('ALERT_ALREADY_RESOLVED',409);if(alert.status!=='ACKNOWLEDGED'){tx.update(ref,{status:'ACKNOWLEDGED',acknowledgedAt:now(),acknowledgedBy:req.user.uid});enqueue(tx,db,'alert.acknowledged',alert.deviceId,ref.id,{alertId:ref.id,deviceId:alert.deviceId,uid:req.user.uid});queueRefresh(tx,db,{deviceId:alert.deviceId,resource:'alerts'})}});req.cacheDeviceIds=[alert.deviceId];res.json({alertId:ref.id,status:'ACKNOWLEDGED'})}
 export async function registerPush(req,res){
  const {sessionId,sessionSecret,...p}=validate(pushToken,req.body);
  const db=firebase().db,id=tokenId(p.token),ref=db.collection('notificationTokens').doc(id);

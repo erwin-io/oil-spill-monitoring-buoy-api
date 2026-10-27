@@ -1,4 +1,5 @@
 import {firebase} from './firebase.js';
+import {queueRefresh} from './realtime-refresh.js';
 import {sendInvitationEmail} from './email-links.js';
 import {httpError} from './domain.js';
 import {validate,deviceId,inviteViewer as invitationSchema} from './schemas.js';
@@ -23,7 +24,9 @@ export async function inviteViewer(req,res){
   if(v.exists&&v.data().status==='ACTIVE')throw httpError('ALREADY_SHARED',409);
   const pending={deviceId:id,ownerUid:req.user.uid,inviteeUid:target.uid,email:target.email.toLowerCase(),status:'PENDING',invitedAt:now()};
   tx.set(invite,pending);tx.set(incoming,pending);
+  queueRefresh(tx,db,{uid:target.uid,resource:'invitations'});
  });
+ req.cacheAffectedUsers=[target.uid];
  const delivery=await sendInvitationEmail(target.email.toLowerCase(),id);
  res.status(201).json({deviceId:id,email:target.email.toLowerCase(),status:'PENDING',emailDelivery:delivery.status});
 }
@@ -41,6 +44,8 @@ export async function acceptInvitation(req,res){
   tx.set(viewer,{uid,status:'ACTIVE',invitedBy:d.data().ownerUid,acceptedAt});
   tx.set(shared,{deviceId:id,ownerUid:d.data().ownerUid,acceptedAt});
   tx.update(invite,{status:'ACCEPTED',acceptedAt});tx.update(incoming,{status:'ACCEPTED',acceptedAt});
+  queueRefresh(tx,db,{deviceId:id,resource:'sharing'});
+  queueRefresh(tx,db,{uid,resource:'invitations'});
  });
  res.json({deviceId:id,access:'VIEWER'});
 }
@@ -54,6 +59,9 @@ export async function revokeViewer(req,res){
   tx.delete(viewer);tx.delete(shared);
   tx.set(invite,{status:'REVOKED',revokedAt:now(),deviceId:id,inviteeUid:uid,ownerUid:req.user.uid},{merge:true});
   tx.set(incoming,{status:'REVOKED',revokedAt:now(),deviceId:id},{merge:true});
+  queueRefresh(tx,db,{deviceId:id,resource:'sharing'});
+  queueRefresh(tx,db,{uid,resource:'invitations'});
  });
+ req.cacheAffectedUsers=[uid];
  res.json({deviceId:id,viewerUid:uid,revoked:true});
 }

@@ -20,7 +20,7 @@ export async function deviceAuth(req,res,next){try{
  req.deviceId=deviceId;next();
  }catch(e){next(e)}}
 export const requireRole=(...roles)=>(req,res,next)=>roles.includes(req.user?.role)?next():next(httpError('FORBIDDEN',403));
-export const deviceScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId).then(()=>next(),next);
+export const deviceScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId).then(level=>{req.deviceAccess=level;next()},next);
 export const deviceOwnerScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId,'OWNER').then(()=>next(),next);
 export const deviceOperatorScope=(req,res,next)=>requireAccess(firebase().db,req.user,req.params.deviceId,'OPERATE').then(()=>next(),next);
 

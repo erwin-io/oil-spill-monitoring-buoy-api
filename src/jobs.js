@@ -78,7 +78,19 @@ export async function pushAlert(db,messaging,job,ref){
 }
 async function sendRealtime(job){if(process.env.PUSHER_ENABLED!=='true')return;
  const {default:Pusher}=await import('pusher');const p=new Pusher({appId:process.env.PUSHER_APP_ID,key:process.env.PUSHER_KEY,secret:process.env.PUSHER_SECRET,cluster:process.env.PUSHER_CLUSTER});
- const channel=job.type==='alert.acknowledged'?`private-user-${job.payload.uid}`:`private-device-${job.deviceId}`;
+ // Personal reads/invitations go only to that user's private channel.
+  // Device changes use the existing signed private-device channel.
+  const toUser=job.type==='alert.acknowledged'||
+    (job.type==='data.changed'&&typeof job.payload?.uid==='string');
+  // One outbox entry fans out to involved ownership identities and the buoy.
+  if(job.type==='data.changed'&&Array.isArray(job.notifyUsers)&&job.notifyUsers.length){
+   const channels=new Set(job.notifyUsers.filter(uid=>typeof uid==='string'&&uid)
+    .map(uid=>`private-user-${uid}`));
+   if(job.deviceId)channels.add(`private-device-${job.deviceId}`);
+   for(const channel of channels)await p.trigger(channel,job.type,job.payload);
+   return;
+  }
+  const channel=toUser?`private-user-${job.payload.uid}`:`private-device-${job.deviceId}`;
  await p.trigger(channel,job.type,job.payload);
 }
 async function dispatchOne(db,messaging,ref){let job;const lease=new Date(Date.now()+90000).toISOString();

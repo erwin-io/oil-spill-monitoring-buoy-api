@@ -23,7 +23,7 @@ export async function requireAccess(db,user,id,kind='READ',tx=null){
  return level;
 }
 
-export async function accessibleDeviceIds(db,user){
+export async function accessibleDeviceAccess(db,user){
  const ids=new Set();
  const owned=await db.collection('devices').where('ownerUid','==',user.uid).get();
  for(const doc of owned.docs)ids.add(doc.id);
@@ -42,6 +42,9 @@ export async function accessibleDeviceIds(db,user){
    }while(last);
   }else for(const id of user.allowedDeviceIds??[])ids.add(id);
  }
- const verified=await Promise.all([...ids].map(async id=>await accessLevel(db,user,id)!=='NONE'?id:null));
- return verified.filter(Boolean);
+ const verified=await Promise.all([...ids].map(async id=>({id,access:await accessLevel(db,user,id)})));
+ return verified.filter(item=>item.access!=='NONE');
+}
+export async function accessibleDeviceIds(db,user){
+ return (await accessibleDeviceAccess(db,user)).map(item=>item.id);
 }
