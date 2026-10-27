@@ -1,6 +1,7 @@
 import {firebase} from './firebase.js';
 import {httpError,keyHash,keysEqual,makeKey} from './domain.js';
 import {validate,claimRequest,confirmClaim,deviceId} from './schemas.js';
+import {queueRefresh} from './realtime-refresh.js';
 
 const ttlMs=5*60*1000;
 const stamp=()=>new Date().toISOString();
@@ -69,7 +70,10 @@ export async function confirmPairing(req,res){
   tx.update(device,{ownerUid,ownedAt:stamp()});
   tx.update(credential,{claimCodeHash:null,claimCodeConsumedAt:stamp()});
   tx.update(pairing,{state:'CONFIRMED',confirmedAt:stamp(),nonceHash:null});
+  queueRefresh(tx,db,{deviceId:id,resource:'ownership'});
+  queueRefresh(tx,db,{uid:ownerUid,resource:'ownership'});
  });
+ req.cacheAffectedUsers=[ownerUid];
  res.json({deviceId:id,challengeId,state:'CONFIRMED'});
 }
 
