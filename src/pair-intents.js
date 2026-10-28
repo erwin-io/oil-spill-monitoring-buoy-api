@@ -60,7 +60,7 @@ export async function requestPairIntent(req,res){
   tx.set(intent,created);result=stateBody(id,created,now);
  });
  if(conflict)throw httpError('PAIRING_CONFLICT',409);
- res.status(code).json(result);
+ res.set('Cache-Control','no-store');res.status(code).json(result);
 }
 
 export async function pairIntentStatus(req,res){
@@ -100,7 +100,7 @@ export async function deviceStartPairing(req,res){
   tx.update(intent,{state:data.state,challengeId,nonceHash:data.nonceHash,pairedAt:data.pairedAt});
   result={protocol:2,deviceId:id,intentId:data.intentId,challengeId,nonce,expiresAt:new Date(data.expiresAt).toISOString()};
  });
- res.status(201).json(result);
+ res.set('Cache-Control','no-store');res.status(201).json(result);
 }
 export async function deviceConfirmPairing(req,res){
  const {intentId,challengeId,nonce}=validate(confirmPairIntent,req.body);
@@ -123,5 +123,5 @@ export async function deviceConfirmPairing(req,res){
   queueRefresh(tx,db,{uid,resource:'ownership'});
  });
  req.cacheAffectedUsers=[uid];
- res.json({protocol:2,deviceId:id,intentId,challengeId,state:'CONFIRMED'});
+ res.set('Cache-Control','no-store');res.json({protocol:2,deviceId:id,intentId,challengeId,state:'CONFIRMED'});
 }
