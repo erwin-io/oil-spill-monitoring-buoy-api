@@ -8,6 +8,7 @@ import swagger from './swagger.js';
 import {randomUUID} from 'node:crypto';
 import * as h from './handlers.js';
 import * as transfer from './transfer.js';
+import * as pairV2 from './pair-intents.js';
 import * as sessions from './push-sessions.js';
 import * as avatar from './avatar.js';
 import * as emailAction from './auth-email.js';
@@ -91,10 +92,23 @@ R('get',p+'/devices',userAuth,cached('devices',20000,h.listDevices,validateMembe
 R('get',p+'/devices/:deviceId',userAuth,deviceScope,cached('device',20000,h.getDevice,validateDeviceAccess));R('patch',p+'/devices/:deviceId',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),invalidating(invalidateDevice,h.updateDevice));
 R('post',p+'/devices/:deviceId/rotate-key',userAuth,requireRole('ADMIN'),distributedRateLimit('user_change',60),invalidating(invalidateDevice,h.rotateKey));
 R('post',p+'/devices/:deviceId/claim-code',userAuth,requireRole('ADMIN'),distributedRateLimit('claim_admin',10),invalidating(invalidateDevice,h.reissueClaimCode));
-R('post',p+'/device/pairing-challenges',deviceAuth,distributedRateLimit('pair_start',6),h.startPairing);
+// Protocol 2 uses QR with public deviceId only. Protocol 1 handlers remain
+// temporarily available for installed old clients until a coordinated cutover.
+R('post',p+'/devices/:deviceId/pair-intents',userAuth,distributedRateLimit('pair_intent',6),pairV2.requestPairIntent);
+R('get',p+'/devices/:deviceId/pair-intents/:intentId',userAuth,pairV2.pairIntentStatus);
+R('delete',p+'/devices/:deviceId/pair-intents/:intentId',userAuth,distributedRateLimit('pair_cancel',12),pairV2.cancelPairIntent);
+R('post',p+'/device/pairing-challenges',deviceAuth,distributedRateLimit('pair_start',6),(req,res)=>{
+ if(req.body?.protocol===2&&Object.keys(req.body).length===1)return pairV2.deviceStartPairing(req,res);
+ if(req.body&&Object.keys(req.body).length===0)return h.startPairing(req,res);
+ throw httpError('INVALID_PAIRING_PROTOCOL',422);
+});
 R('post',p+'/devices/:deviceId/claims',userAuth,distributedRateLimit('claim_request',10),h.requestClaim);
 R('get',p+'/devices/:deviceId/claims/:challengeId',userAuth,h.pairingStatus);
-R('post',p+'/device/pairing-confirmations',deviceAuth,distributedRateLimit('pair_confirm',12),invalidating(invalidateDevice,h.confirmPairing));
+R('post',p+'/device/pairing-confirmations',deviceAuth,distributedRateLimit('pair_confirm',12),invalidating(invalidateDevice,(req,res)=>{
+ if(req.body?.protocol===2)return pairV2.deviceConfirmPairing(req,res);
+ if(req.body&&Object.keys(req.body).sort().join('|')==='challengeId|nonce')return h.confirmPairing(req,res);
+ throw httpError('INVALID_PAIRING_PROTOCOL',422);
+}));
 R('post',p+'/devices/:deviceId/invitations',userAuth,deviceOwnerScope,distributedRateLimit('invite',10),invalidating(invalidateDevice,h.inviteViewer));
 R('get',p+'/invitations',userAuth,cached('invitations',20000,h.myInvitations));
 R('post',p+'/devices/:deviceId/invitations/accept',userAuth,distributedRateLimit('invite_accept',15),invalidating(invalidateDevice,h.acceptInvitation));
