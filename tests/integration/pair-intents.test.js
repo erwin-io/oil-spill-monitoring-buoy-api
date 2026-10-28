@@ -69,7 +69,7 @@ test('v2 QR device ID: authenticated intent -> LTE PAIR -> atomic owner, nonce o
   const secret=(await db.collection('devicePairIntents').doc(id).get()).data();
   assert.equal(JSON.stringify(secret).includes(challenge.value.nonce),false,'No plaintext nonce in Firestore');
   assert.equal((await call('POST','/api/v1/device/pairing-confirmations',
-   {...challenge.value,nonce:'WRONG_NONCE'.padEnd(40,'_')},deviceHeaders(id,key))).status,403);
+   {protocol:2,intentId:challenge.value.intentId,challengeId:challenge.value.challengeId,nonce:'WRONG_NONCE'.padEnd(40,'_')},deviceHeaders(id,key))).status,403);
   const success=await call('POST','/api/v1/device/pairing-confirmations',
    {protocol:2,intentId:challenge.value.intentId,challengeId:challenge.value.challengeId,nonce:challenge.value.nonce},
    deviceHeaders(id,key));
