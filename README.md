@@ -84,3 +84,19 @@ Optional *still one-command* variants:
 Android options require Android SDK, JDK 21 and the existing Firebase Android configuration, and device installation requires a running emulator or authorized Android phone. **Without -Android, neither hardware nor a Firebase service account is needed.** A real PAIR GPIO + A7670C LTE test requires separately updated device firmware and physical hardware; software emulators do not prove it.
 
 Equivalent npm command from either repository: `npm run verify:all`. Windows GitHub Actions also checks the real one-command launch path via `Verify BlueGuard one-command runner` in the API repository. The script never runs `git reset`, `git clean`, force-pushes, or modifies your local signing configuration.
+
+### Firebase emulator port conflicts (Windows)
+
+The one-command API test runner now generates a private, disposable Firebase
+configuration and uses OS-allocated **127.0.0.1** ports for Firestore, Auth,
+Firestore WebSocket, emulator hub and emulator logger. If ports 8080, 9099,
+9150, 4400 or 4500 are already used by another Java/Firebase process, it
+**does not kill that process, reuse its database or connect to production**.
+The temporary `firebase-api-local-*.json` config is removed after success or
+failure. Local test reports record only the selected port numbers.
+
+Simply rerun `.\\test-blueguard.cmd -Android`; no `taskkill`, service-account
+setup or manual edits to `firebase.json` are necessary. Firebase emulator
+startup itself still needs Java and enough free local ports. A rare race in
+which another process grabs an OS-selected free port between selection and
+Firebase startup will fail safely rather than connect to that process.
