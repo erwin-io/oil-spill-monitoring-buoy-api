@@ -15,9 +15,9 @@ async function occupyPort(port=0){
  });
  return {port:server.address().port,close:()=>new Promise(resolve=>server.close(resolve))};
 }
-test('Firebase test selection bypasses occupied 8080 and 9099 without terminating their listeners',async()=>{
+test('Firebase test selection bypasses occupied Firebase ports (8080, 9099, 9150, 4400 and 4500) without terminating their listeners',async()=>{
  const held=[];
- for(const port of [8080,9099,9150]){
+ for(const port of [8080,9099,9150,4400,4500]){
   try{held.push(await occupyPort(port))}
   catch(error){
    if(error.code!=='EADDRINUSE'&&error.code!=='EACCES')throw error;
@@ -28,10 +28,10 @@ test('Firebase test selection bypasses occupied 8080 and 9099 without terminatin
  try{
   const {ports,path,config,cleanup}=await createIsolatedEmulatorConfig(process.cwd(),out);
   const selected=Object.values(ports);
-  assert.equal(new Set(selected).size,3,'Firestore, Auth, WebSocket must have distinct ports');
+  assert.equal(new Set(selected).size,5,'All Firebase emulators must have distinct ports');
   for(const n of selected){
    assert.ok(Number.isInteger(n)&&n>=1024&&n<=65535);
-   assert.ok(![8080,9099,9150].includes(n),'Do not use fixed legacy ports');
+   assert.ok(![8080,9099,9150,4400,4500].includes(n),'Do not use fixed legacy ports');
   }
   assert.equal(config.emulators.firestore.host,'127.0.0.1');
   assert.equal(config.emulators.auth.host,'127.0.0.1');
@@ -39,12 +39,14 @@ test('Firebase test selection bypasses occupied 8080 and 9099 without terminatin
   assert.equal(config.emulators.firestore.port,ports.firestore);
   assert.equal(config.emulators.firestore.websocketPort,ports.websocket);
   assert.equal(config.emulators.auth.port,ports.auth);
+  assert.equal(config.emulators.hub.port,ports.hub);
+  assert.equal(config.emulators.logging.port,ports.logging);
   assert.equal(JSON.parse(readFileSync(path,'utf8')).emulators.auth.port,ports.auth);
   assert.equal(existsSync(path),true);
   cleanup();
   assert.equal(existsSync(path),false,'Temporary config must be removed');
   cleanup(); // Safe idempotent cleanup
-  for(const listener of held)assert.equal(listener.port===8080||listener.port===9099||listener.port===9150,true);
+  for(const listener of held)assert.ok([8080,9099,9150,4400,4500].includes(listener.port));
  }finally{
   for(const server of held)await server.close();
   rmSync(out,{recursive:true,force:true});
@@ -52,5 +54,5 @@ test('Firebase test selection bypasses occupied 8080 and 9099 without terminatin
 });
 test('free port discovery gives distinct OS-selected loopback ports',async()=>{
  const ports=await selectEmulatorPorts();
- assert.equal(new Set(Object.values(ports)).size,3);
+ assert.equal(new Set(Object.values(ports)).size,5);
 });
