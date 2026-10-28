@@ -8,6 +8,9 @@ on:
       - tests/one-command.test.js
       - .github/workflows/blueguard-one-command.yml
       - scripts/verify-thesis.ps1
+      - scripts/verify-local.mjs
+      - scripts/emulator-ports.mjs
+      - tests/emulator-ports.test.js
       - package.json
   workflow_dispatch:
 
