@@ -11,6 +11,7 @@ on:
       - scripts/verify-local.mjs
       - scripts/emulator-ports.mjs
       - tests/emulator-ports.test.js
+      - scripts/hold-emulator-default-ports.mjs
       - package.json
   workflow_dispatch:
 
@@ -40,9 +41,36 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Run exactly the manual Windows command
+      # The exact defect was a previously running process occupying 8080.
+      # Prove the command works with all legacy Firebase ports unavailable.
+      - name: Occupy legacy Firebase ports without running an emulator
+        shell: pwsh
+        run: |
+          $ready = Join-Path $env:RUNNER_TEMP 'blueguard-occupied-ports-ready.json'
+          $out = Join-Path $env:RUNNER_TEMP 'blueguard-occupied-ports.stdout.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'blueguard-occupied-ports.stderr.txt'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'oil-spill-monitoring-buoy-api\scripts\hold-emulator-default-ports.mjs'
+          $holder = Start-Process -FilePath (Get-Command node).Source -ArgumentList @("`"$script`"", "`"$ready`"") -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+          "BLUEGUARD_HOLDER_PID=$($holder.Id)" >> $env:GITHUB_ENV
+          for ($i = 0; $i -lt 40; $i++) {
+            if (Test-Path $ready) { break }
+            if ($holder.HasExited) { throw "Port holder exited: $(Get-Content $err -Raw)" }
+            Start-Sleep -Milliseconds 250
+          }
+          if (!(Test-Path $ready)) { throw 'Default-port blocker did not become ready' }
+          $actual = Get-Content $ready -Raw | ConvertFrom-Json
+          if ($actual.ports.Count -ne 5) { throw 'Did not occupy all default ports' }
+          Write-Host "Default ports held: $($actual.ports -join ', ')"
+      - name: Run exactly the manual Windows command with ports occupied
         shell: cmd
         run: call oil-spill-monitoring-buoy-api\test-blueguard.cmd
+      - name: Stop only the test-owned port blocker
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:BLUEGUARD_HOLDER_PID) {
+            Stop-Process -Id ([int]$env:BLUEGUARD_HOLDER_PID) -ErrorAction SilentlyContinue
+          }
       - name: Preserve private test output artifacts
         if: always()
         uses: actions/upload-artifact@v4
