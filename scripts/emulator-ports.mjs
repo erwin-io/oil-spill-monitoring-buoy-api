@@ -27,7 +27,7 @@ export async function selectEmulatorPorts(){
   }
   throw new Error('Unable to allocate distinct local emulator ports');
  }
- return {firestore:await unique(),auth:await unique(),websocket:await unique()};
+ return {firestore:await unique(),auth:await unique(),websocket:await unique(),hub:await unique(),logging:await unique()};
 }
 export async function createIsolatedEmulatorConfig(root,outputDir){
  const ports=await selectEmulatorPorts();
@@ -40,6 +40,8 @@ export async function createIsolatedEmulatorConfig(root,outputDir){
   emulators:{
    firestore:{host:'127.0.0.1',port:ports.firestore,websocketPort:ports.websocket},
    auth:{host:'127.0.0.1',port:ports.auth},
+   hub:{host:'127.0.0.1',port:ports.hub},
+   logging:{host:'127.0.0.1',port:ports.logging},
    ui:{enabled:false}
   }
  };
