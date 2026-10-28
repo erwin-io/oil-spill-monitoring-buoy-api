@@ -29,8 +29,10 @@ export async function startPairing(req,res){
  const id=req.deviceId,challengeId=makeKey(),nonce=makeKey(),db=firebase().db;
  const {device,credential,pairing}=refs(db,id),expiresAt=Date.now()+ttlMs;
  await db.runTransaction(async tx=>{
-  const [d,c]=await Promise.all([tx.get(device),tx.get(credential)]);
+  const [d,c,v2]=await Promise.all([tx.get(device),tx.get(credential),tx.get(db.collection('devicePairIntents').doc(id))]);
   if(!d.exists||d.data().ownerUid)throw httpError('ALREADY_OWNED',409);
+  if(v2.exists&&v2.data().expiresAt>Date.now()&&['WAITING_FOR_PAIR','PENDING','CONFLICT'].includes(v2.data().state))
+   throw httpError('PAIRING_PROTOCOL_CONFLICT',409);
   if(!c.exists||!c.data().claimCodeHash)throw httpError('CLAIM_CODE_REQUIRED',409);
   tx.set(pairing,{challengeId,nonceHash:hash('pair',nonce),claimCodeVersion:c.data().claimCodeVersion,
    expiresAt,state:'OPEN',candidateUid:null,createdAt:stamp()});
@@ -61,7 +63,9 @@ export async function confirmPairing(req,res){
  const id=req.deviceId,{challengeId,nonce}=validate(confirmClaim,req.body),db=firebase().db;
  const {device,credential,pairing}=refs(db,id);let ownerUid;
  await db.runTransaction(async tx=>{
-  const [d,c,p]=await Promise.all([tx.get(device),tx.get(credential),tx.get(pairing)]);
+  const [d,c,p,v2]=await Promise.all([tx.get(device),tx.get(credential),tx.get(pairing),tx.get(db.collection('devicePairIntents').doc(id))]);
+  if(v2.exists&&v2.data().expiresAt>Date.now()&&['WAITING_FOR_PAIR','PENDING','CONFLICT'].includes(v2.data().state))
+   throw httpError('PAIRING_PROTOCOL_CONFLICT',409);
   if(!d.exists||!c.exists||!p.exists||p.data().challengeId!==challengeId||p.data().expiresAt<=Date.now())throw httpError('CHALLENGE_EXPIRED',409);
   if(d.data().ownerUid)throw httpError('ALREADY_OWNED',409);
   if(p.data().state!=='PENDING'||!p.data().candidateUid||p.data().claimCodeVersion!==c.data().claimCodeVersion)throw httpError('CLAIM_NOT_PENDING',409);
