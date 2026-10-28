@@ -19,7 +19,8 @@ async function freeLoopbackPort(){
  });
 }
 export async function selectEmulatorPorts(){
- const reserved=new Set();
+ // Never select the legacy defaults, even on hosts with a custom ephemeral range.
+ const reserved=new Set([8080,9099,9150,4400,4500]);
  async function unique(){
   for(let retry=0;retry<20;retry++){
    const port=await freeLoopbackPort();
