@@ -48,7 +48,7 @@ test('v2 QR device ID: authenticated intent -> LTE PAIR -> atomic owner, nonce o
   const path='/api/v1/devices/'+id+'/pair-intents';
   const get=async(intent,person)=>call('GET',path+'/'+intent,undefined,userHeaders(person));
   assert.equal((await call('POST',path,{},{})).status,401);
-  assert.equal((await call('POST',path+'-WRONG',{},userHeaders(alice))).status,404);
+  assert.equal((await call('POST','/api/v1/devices/'+id+'-UNKNOWN/pair-intents',{},userHeaders(alice))).status,404);
   assert.equal((await db.collection('devicePairIntents').doc(id).get()).exists,false,'Idle buoy has no pairing state');
   const first=await call('POST',path,{},userHeaders(alice));
   assert.equal(first.status,201,JSON.stringify(first.value));
@@ -110,6 +110,24 @@ test('v2 competing accounts fail closed, explicit cancel permits fresh retry, ol
    {protocol:2,intentId:c2.value.intentId,challengeId:c2.value.challengeId,nonce:c2.value.nonce},deviceHeaders(id,key));
   assert.equal(good.status,200);
   assert.equal((await db.collection('devices').doc(id).get()).data().ownerUid,bob.uid);
+ }finally{await close()}
+});
+test('competing account arriving after physical PAIR invalidates in-flight nonce and prevents owner assignment',async()=>{
+ const [admin,alice,bob]=await Promise.all([account('ADMIN'),account(),account()]);
+ const {call,close}=await setup();
+ try{
+  const {id,key}=await register(call,admin),url='/api/v1/devices/'+id+'/pair-intents';
+  const a=await call('POST',url,{},userHeaders(alice));
+  assert.equal(a.status,201);
+  const physical=await call('POST','/api/v1/device/pairing-challenges',{protocol:2},deviceHeaders(id,key));
+  assert.equal(physical.status,201);
+  assert.equal((await call('POST',url,{},userHeaders(bob))).status,409);
+  assert.equal((await call('GET',url+'/'+a.value.intentId,undefined,userHeaders(alice))).value.state,'CONFLICT');
+  const confirmation=await call('POST','/api/v1/device/pairing-confirmations',{
+   protocol:2,intentId:physical.value.intentId,challengeId:physical.value.challengeId,nonce:physical.value.nonce
+  },deviceHeaders(id,key));
+  assert.equal(confirmation.status,409);
+  assert.equal((await db.collection('devices').doc(id).get()).data().ownerUid??null,null);
  }finally{await close()}
 });
 test('v2 expiry, cancellation, different devices and legacy v1 compatibility are isolated',async()=>{
