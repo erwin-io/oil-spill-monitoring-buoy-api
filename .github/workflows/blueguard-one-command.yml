@@ -1,0 +1,53 @@
+name: Verify BlueGuard one-command runner
+on:
+  push:
+    branches: [main]
+    paths:
+      - test-blueguard.cmd
+      - test-blueguard.ps1
+      - tests/one-command.test.js
+      - .github/workflows/blueguard-one-command.yml
+      - scripts/verify-thesis.ps1
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-repo-one-command:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout API to sibling workspace
+        uses: actions/checkout@v4
+        with:
+          path: oil-spill-monitoring-buoy-api
+      - name: Checkout Mobile main to sibling workspace
+        uses: actions/checkout@v4
+        with:
+          repository: erwin-io/oil-spill-monitoring-buoy-app
+          ref: main
+          path: oil-spill-monitoring-buoy-app
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Run exactly the manual Windows command
+        shell: cmd
+        run: call oil-spill-monitoring-buoy-api\test-blueguard.cmd
+      - name: Preserve private test output artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blueguard-one-command-test-reports
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            oil-spill-monitoring-buoy-api/.test-output/*validation.json
+            oil-spill-monitoring-buoy-api/.test-output/blueguard-one-command-report.json
+            oil-spill-monitoring-buoy-app/.test-output/*validation.json
