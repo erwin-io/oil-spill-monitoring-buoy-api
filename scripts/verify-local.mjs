@@ -11,6 +11,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { createIsolatedEmulatorConfig } from './emulator-ports.mjs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,7 +47,7 @@ const commands = [
   ...(!args.has('--skip-install') ? [{name:'Reproducible dependencies',command:'npm',argv:['ci','--no-audit','--no-fund']}] : []),
   {name:'Node syntax checks',command:'npm',argv:['run','check']},
   {name:'Unit and validation tests',command:'npm',argv:['test']},
-  {name:'Firebase Auth + Firestore HTTP integration',command:'npx',argv:[
+  {name:'Firebase Auth + Firestore HTTP integration',firebaseEmulators:true,command:'npx',argv:[
     '--yes','firebase-tools@15.9.0','emulators:exec',
     '--project',demoProject,'--only','firestore,auth',
     // On Windows Node runs npx.cmd via cmd.exe. Without explicit shell quotes,
@@ -60,6 +61,8 @@ const commands = [
 ];
 const results = [];
 let failure = null;
+let emulatorConfig = null;
+let emulatorPorts = null;
 console.log('Oil Spill Monitoring Buoy API: SAFE LOCAL AUTOMATED ACCEPTANCE');
 console.log('Firebase target: LOCAL EMULATORS ONLY (demo- project, no cloud writes).');
 console.log('External Pusher/FCM delivery: intentionally disabled.');
@@ -71,7 +74,18 @@ try {
   for (const step of commands) {
     console.log(`\n=== ${step.name} ===`);
     const start = Date.now();
-    const ret = spawnSync(windows ? `${step.command}.cmd` : step.command,step.argv,{
+    let commandArgs = step.argv;
+    if(step.firebaseEmulators){
+      // Firebase's ordinary firebase.json has fixed ports, which may belong
+      // to another running Java emulator. Allocate isolated ports for THIS
+      // invocation and pass an ephemeral config using --config.
+      emulatorConfig = await createIsolatedEmulatorConfig(root,join(root,'.test-output'));
+      emulatorPorts = emulatorConfig.ports;
+      console.log('Isolated loopback Firebase ports:',JSON.stringify(emulatorPorts));
+      const configArg=windows ? '"'+emulatorConfig.path+'"' : emulatorConfig.path;
+      commandArgs=[...step.argv.slice(0,3),'--config',configArg,...step.argv.slice(3)];
+    }
+    const ret = spawnSync(windows ? `${step.command}.cmd` : step.command,commandArgs,{
       cwd: root, env: safeEnv, stdio: 'inherit',
       // npm.cmd / npx.cmd are batch entrypoints on Windows.
       shell: windows,
@@ -84,7 +98,16 @@ try {
       break;
     }
   }
+} catch(error) {
+  failure=error?.message || String(error);
+  if(results.at(-1)?.status!=='FAIL')results.push({
+    name:'Firebase isolated emulator setup',status:'FAIL'
+  });
 } finally {
+  try{emulatorConfig?.cleanup()}catch(error){
+    console.error('Temporary Firebase config cleanup failed:',error.message);
+    failure ||= 'Temporary Firebase config cleanup failed';
+  }
   const outputDir = join(root,'.test-output');
   mkdirSync(outputDir,{recursive:true});
   const report = {
@@ -92,6 +115,7 @@ try {
     timestamp:new Date().toISOString(),
     project:demoProject,
     target:'firebase-emulators-only',
+    emulatorPorts,
     cloudWrites:false,
     externalPushDeliveryTested:false,
     steps:results,
